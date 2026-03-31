@@ -1188,11 +1188,17 @@ const YIELD = {
 };
 
 let lastTick = performance.now();
+let yieldRunning = false; // Only tick when wallet is connected
 
 function tickYield(now) {
+  if (!yieldRunning) { requestAnimationFrame(tickYield); return; } // Paused — keep loop alive but do nothing
+
   const dt = (now - lastTick) / 1000;
   lastTick = now;
-  YIELD.accum += YIELD.perSecond * dt;
+
+  // Calculate total yield from startTime to now (not incremental — always accurate)
+  const totalElapsedSec = (Date.now() - YIELD.startTime) / 1000;
+  YIELD.accum = YIELD.perSecond * totalElapsedSec;
 
   // Update yield ticker
   const el = document.getElementById('yield-ticker');
@@ -1204,19 +1210,39 @@ function tickYield(now) {
   const dayEl = document.getElementById('yield-per-day');
   if (dayEl) dayEl.textContent = '$' + YIELD.perDay.toFixed(2);
 
-  // Update today/month/total stats (every ~500ms to avoid DOM thrashing)
+  // Update today/month/total stats
   if (Math.random() < 0.03) {
     const todayEl = document.getElementById('yield-today');
     const monthEl = document.getElementById('yield-month');
     const totalEl = document.getElementById('yield-total');
-    if (todayEl) todayEl.textContent = '+$' + YIELD.accum.toFixed(2);
-    if (monthEl) monthEl.textContent = '+$' + (YIELD.accum * 30).toFixed(2);
+    // Today = yield earned in the last 24 hours (or since start if less than 24h)
+    const hoursElapsed = totalElapsedSec / 3600;
+    const todayYield = Math.min(hoursElapsed, 24) * YIELD.perSecond * 3600;
+    // Month = yield earned in last 30 days (or since start if less)
+    const daysElapsed = totalElapsedSec / 86400;
+    const monthYield = Math.min(daysElapsed, 30) * YIELD.perDay;
+    if (todayEl) todayEl.textContent = '+$' + todayYield.toFixed(2);
+    if (monthEl) monthEl.textContent = '+$' + monthYield.toFixed(2);
     if (totalEl) totalEl.textContent = '+$' + YIELD.accum.toFixed(2);
   }
+
+  // Update balance display (principal + yield)
+  const balEl = document.getElementById('user-balance');
+  if (balEl) balEl.textContent = (YIELD.principal + YIELD.accum).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 
   requestAnimationFrame(tickYield);
 }
 requestAnimationFrame(tickYield);
+
+function startYieldTracking() {
+  yieldRunning = true;
+  lastTick = performance.now();
+}
+
+function stopYieldTracking() {
+  yieldRunning = false;
+  YIELD.accum = 0;
+}
 
 // ── Tier selection ──
 function pickTier(tier, el) {
@@ -1550,8 +1576,14 @@ async function finalizeConnection(provider, addressOverride) {
     // Recalculate accumulated yield from start time
     const elapsedSec = (Date.now() - YIELD.startTime) / 1000;
     YIELD.accum = YIELD.perSecond * elapsedSec;
+    // Start yield tracking from the persisted start time
+    // YIELD.accum is calculated from startTime in the ticker — not incremental
+    localStorage.removeItem('nexvault_disconnected');
+    startYieldTracking();
     // Redraw chart with correct start time
     if (typeof drawYieldChart === 'function') drawYieldChart(currentTF || '1M');
+    // Restart real-time chart updates
+    if (typeof startRealtimeChart === 'function') startRealtimeChart();
 
     // Check genesis badge
     if (typeof checkGenesisBadge === 'function') {
@@ -1590,13 +1622,24 @@ function connectWallet() {
 }
 
 function disconnectWallet() {
+  // Stop yield tracking and chart updates
+  stopYieldTracking();
+  if (chartUpdateTimer) { clearInterval(chartUpdateTimer); chartUpdateTimer = null; }
+
+  // Hide dev panel
+  const devPanel = document.getElementById('dev-panel');
+  if (devPanel) devPanel.style.display = 'none';
+
   // Disconnect WalletConnect session if active
   if (window._wcProvider) {
     try { window._wcProvider.disconnect(); } catch(e) {}
     window._wcProvider = null;
   }
   window._activeProvider = null;
-  localStorage.removeItem('nexvault_wallet');
+  // Keep nexvault_wallet in localStorage so we can restore on reconnect
+  // but mark as disconnected
+  localStorage.setItem('nexvault_disconnected', 'true');
+
   const btn = document.getElementById('wallet-btn');
   btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
   btn.style.borderColor = 'rgba(201,168,76,.2)';
@@ -1612,32 +1655,29 @@ function disconnectWallet() {
   const refEl = document.querySelector('.ref-link');
   if (refEl) refEl.textContent = 'Connect wallet to get your referral link';
 
+  // Reset displayed values
+  const balEl = document.getElementById('user-balance');
+  if (balEl) balEl.textContent = '0.00';
+  const tickerEl = document.getElementById('yield-ticker');
+  if (tickerEl) tickerEl.innerHTML = '+0.00000000 <span style="font-size:14px;color:#5a5650">USDX</span>';
+
   showNotif('Wallet disconnected', 'ok');
 }
 
-// Auto-reconnect on page load
+// Auto-reconnect on page load — uses finalizeConnection for full restore
 window.addEventListener('DOMContentLoaded', () => {
   const saved = localStorage.getItem('nexvault_wallet');
-  if (!saved) return;
+  const wasDisconnected = localStorage.getItem('nexvault_disconnected');
+  if (!saved || wasDisconnected) return;
   waitForMetaMask().then(provider => {
-    if (!provider) { localStorage.removeItem('nexvault_wallet'); return; }
+    if (!provider) return;
     provider.request({ method: 'eth_accounts' }).then(accounts => {
       if (accounts && accounts.length > 0 && accounts[0].toLowerCase() === saved.toLowerCase()) {
-        // Silently reconnect
         window._activeProvider = provider;
-        const short = accounts[0].slice(0,6) + '...' + accounts[0].slice(-4);
-        const btn = document.getElementById('wallet-btn');
-        btn.innerHTML = '<div style="width:7px;height:7px;border-radius:50%;background:#4ade80"></div> <span>' + short + '</span>';
-        btn.style.borderColor = 'rgba(96,165,250,.3)';
-        btn.style.background = 'rgba(96,165,250,.07)';
-        btn.style.color = '#60a5fa';
-        btn.onclick = function() { disconnectWallet(); };
-        const prompt = document.getElementById('connect-prompt');
-        const content = document.getElementById('balance-content');
-        if (prompt) prompt.style.display = 'none';
-        if (content) content.style.display = 'block';
-      } else { localStorage.removeItem('nexvault_wallet'); }
-    }).catch(() => localStorage.removeItem('nexvault_wallet'));
+        // Use finalizeConnection so yield tracking, chart, dev panel all restore
+        finalizeConnection(provider, accounts[0]);
+      }
+    }).catch(() => {});
   });
 });
 </script>

@@ -2,8 +2,9 @@
 
 const { contextBridge } = require('electron')
 
-// Expose minimal app info to the renderer (nexvault.one page)
+// Expose desktop app info to the renderer
 contextBridge.exposeInMainWorld('__nexvaultDesktop', {
   version:  require('./package.json').version,
-  platform: process.platform
+  platform: process.platform,
+  isDesktopApp: true
 })

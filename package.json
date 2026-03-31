@@ -1,6 +1,6 @@
 {
   "name": "nexvault-desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "productName": "NexVault",
   "description": "NexVault — USDX Savings Protocol Desktop App",
   "main": "main.js",
@@ -23,6 +23,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "app.html",
       "assets/**"
     ],
     "win": {
@@ -42,9 +43,13 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": false,
+      "allowElevation": true,
+      "runAfterFinish": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "NexVault"
+      "shortcutName": "NexVault",
+      "installerSidebar": null,
+      "deleteAppDataOnUninstall": false
     }
   }
 }

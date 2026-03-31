@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>NexVault — USDX Savings Dashboard</title>
+  <meta name="robots" content="noindex,nofollow"/>
+  <link rel="icon" href="/favicon.ico" sizes="any"/>
+  <meta name="theme-color" content="#05060a"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,300;0,400;0,600;1,400&family=DM+Mono:wght@300;400;500&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --gold:#c9a84c;--gold-b:#f0c040;--gold-dim:rgba(201,168,76,.12);
+      --bg:#05060a;--bg2:#080b12;--bg3:#0c0f18;--bg4:#10131c;
+      --border:rgba(201,168,76,.08);--border2:rgba(255,255,255,.05);
+      --text:#f0ece4;--text2:#b8b3aa;--muted:#5a5650;--dim:#374151;
+      --green:#4ade80;--green-g:rgba(74,222,128,.08);
+      --blue:#60a5fa;--blue-g:rgba(96,165,250,.08);
+      --purple:#a78bfa;--purple-g:rgba(167,139,250,.08);
+      --red:#f87171;--red-g:rgba(248,113,113,.06);
+      --r:14px;--rs:8px;
+    }
+    html{scroll-behavior:smooth}
+    body{background:var(--bg);color:var(--text);font-family:'DM Mono',monospace;min-height:100vh;overflow-x:hidden}
+    button{cursor:pointer;font-family:'DM Mono',monospace}
+    input:focus{outline:none}
+    input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+    ::-webkit-scrollbar{width:3px}
+    ::-webkit-scrollbar-thumb{background:rgba(201,168,76,.15);border-radius:2px}
+
+    /* ── Background ── */
+    #bg-canvas{position:fixed;inset:0;z-index:0;pointer-events:none}
+    .scan-lines{
+      position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.015;
+      background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(201,168,76,.1) 2px,rgba(201,168,76,.1) 4px);
+    }
+
+    /* ── Animations ── */
+    @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    @keyframes glow{0%,100%{box-shadow:0 0 8px rgba(201,168,76,.15)}50%{box-shadow:0 0 20px rgba(201,168,76,.25)}}
+    @keyframes tickGlow{0%{text-shadow:0 0 4px rgba(74,222,128,.3)}50%{text-shadow:0 0 12px rgba(74,222,128,.5)}100%{text-shadow:0 0 4px rgba(74,222,128,.3)}}
+    @keyframes slideRight{from{width:0}to{width:var(--w,50%)}}
+    .fi{animation:fadeIn .5s ease both}
+    .fi1{animation-delay:.05s}.fi2{animation-delay:.1s}.fi3{animation-delay:.15s}.fi4{animation-delay:.2s}.fi5{animation-delay:.25s}
+
+    /* ── Top Bar ── */
+    .top{
+      position:sticky;top:0;z-index:50;height:54px;
+      background:rgba(5,6,10,.92);backdrop-filter:blur(24px);
+      border-bottom:1px solid var(--border);
+      padding:0 24px;display:flex;align-items:center;justify-content:space-between;
+    }
+    .top-left{display:flex;align-items:center;gap:14px}
+    .logo{width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,#c9a84c,#8b6914);display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:14px;font-weight:700;color:#05060a}
+    .logo-name{font-family:'Playfair Display',serif;font-size:15px;font-weight:400;letter-spacing:.14em;color:var(--text)}
+    .top-sep{width:1px;height:20px;background:var(--border)}
+    .top-nav{display:flex;gap:2px}
+    .top-link{padding:5px 12px;border-radius:6px;font-size:10px;letter-spacing:.06em;font-weight:500;text-decoration:none;color:var(--muted);transition:all .15s}
+    .top-link:hover{color:var(--text);background:rgba(255,255,255,.04)}
+    .top-link.act{color:var(--gold);background:rgba(201,168,76,.08)}
+    .top-right{display:flex;align-items:center;gap:10px}
+    .net-pill{padding:3px 10px;border-radius:16px;font-size:9px;letter-spacing:.08em;font-weight:600;border:1px solid rgba(74,222,128,.2);background:rgba(74,222,128,.05);color:var(--green)}
+    .w-btn{padding:7px 16px;border-radius:8px;font-size:10px;letter-spacing:.06em;font-weight:600;border:1px solid rgba(201,168,76,.2);background:rgba(201,168,76,.06);color:var(--gold);transition:all .2s;display:flex;align-items:center;gap:7px}
+    .w-btn:hover{background:rgba(201,168,76,.12)}
+
+    /* ── Dashboard container ── */
+    .dash{max-width:1280px;margin:0 auto;padding:20px 20px 60px;position:relative;z-index:1}
+
+    /* ── Protocol stats (hex-accented) ── */
+    .stats-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px}
+    .stat-hex{
+      position:relative;padding:18px 20px;
+      background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);
+      overflow:hidden;transition:border-color .25s;
+    }
+    .stat-hex:hover{border-color:rgba(201,168,76,.2)}
+    .stat-hex::before{content:'';position:absolute;top:-1px;left:20px;right:20px;height:1px;background:linear-gradient(90deg,transparent,rgba(201,168,76,.3),transparent)}
+    .stat-label{font-size:9px;letter-spacing:.12em;color:var(--dim);font-weight:500;margin-bottom:6px;text-transform:uppercase}
+    .stat-val{font-family:'Playfair Display',serif;font-size:22px;font-weight:300;line-height:1.1}
+    .stat-sub{font-size:10px;color:var(--dim);margin-top:3px}
+
+    /* ── CHART CARD (TradingView-style) ── */
+    .chart-card{
+      background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);
+      margin-bottom:20px;overflow:hidden;
+    }
+    .chart-header{
+      padding:16px 20px;border-bottom:1px solid var(--border);
+      display:flex;align-items:center;justify-content:space-between;
+    }
+    .chart-title{font-size:11px;letter-spacing:.1em;color:var(--muted);font-weight:600;text-transform:uppercase}
+    .chart-pair{display:flex;align-items:center;gap:10px}
+    .chart-pair-name{font-size:15px;color:var(--text);font-weight:600}
+    .chart-pair-change{font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px}
+    .chart-pair-change.up{color:var(--green);background:var(--green-g)}
+    .chart-pair-change.down{color:var(--red);background:var(--red-g)}
+    .chart-timeframes{display:flex;gap:2px}
+    .chart-tf{padding:4px 10px;border-radius:4px;font-size:10px;font-weight:500;color:var(--dim);background:transparent;border:none;transition:all .15s;letter-spacing:.04em}
+    .chart-tf:hover{color:var(--muted)}
+    .chart-tf.act{color:var(--gold);background:rgba(201,168,76,.1)}
+    .chart-body{padding:0;position:relative;height:320px;background:var(--bg)}
+    .chart-body canvas{width:100%;height:100%}
+    .chart-overlay{
+      position:absolute;top:16px;left:20px;z-index:2;
+    }
+    .chart-overlay-val{font-family:'Playfair Display',serif;font-size:32px;color:var(--text);font-weight:300}
+    .chart-overlay-sub{font-size:11px;color:var(--muted);margin-top:2px}
+    .chart-legend{
+      padding:12px 20px;border-top:1px solid var(--border);
+      display:flex;gap:24px;font-size:10px;color:var(--dim);
+    }
+    .chart-legend span{display:flex;align-items:center;gap:6px}
+    .chart-legend-dot{width:8px;height:3px;border-radius:1px}
+
+    /* ── Main grid ── */
+    .grid{display:grid;grid-template-columns:1fr 400px;gap:20px;align-items:start}
+
+    /* ── Card ── */
+    .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+    .card-h{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .card-t{font-size:10px;letter-spacing:.1em;color:var(--muted);font-weight:600;text-transform:uppercase}
+    .card-b{padding:20px}
+
+    /* ── Live yield feed ── */
+    .yield-feed{
+      background:linear-gradient(135deg,rgba(74,222,128,.03),rgba(74,222,128,.01));
+      border:1px solid rgba(74,222,128,.1);border-radius:var(--r);
+      padding:20px;margin-bottom:16px;position:relative;overflow:hidden;
+    }
+    .yield-feed::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(74,222,128,.4),transparent)}
+    .yield-feed-header{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+    .yield-feed-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite}
+    .yield-feed-label{font-size:10px;letter-spacing:.12em;color:rgba(74,222,128,.7);font-weight:600;text-transform:uppercase}
+    .yield-ticker{
+      font-size:28px;color:var(--green);font-weight:400;letter-spacing:.02em;
+      animation:tickGlow 2s ease-in-out infinite;margin-bottom:4px;
+    }
+    .yield-rate{font-size:11px;color:var(--dim);margin-bottom:16px}
+    .yield-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .yield-stat{padding:10px 12px;background:rgba(74,222,128,.04);border:1px solid rgba(74,222,128,.08);border-radius:var(--rs)}
+    .yield-stat-label{font-size:8px;letter-spacing:.1em;color:var(--dim);font-weight:500;margin-bottom:4px;text-transform:uppercase}
+    .yield-stat-val{font-size:14px;color:var(--green);font-weight:400}
+
+    /* ── Genesis Badge ── */
+    .genesis-badge-icon{
+      display:none;align-items:center;gap:12px;
+      padding:14px 18px;margin-bottom:18px;border-radius:var(--r);
+      background:linear-gradient(135deg,rgba(201,168,76,.06),rgba(201,168,76,.02));
+      border:1px solid rgba(201,168,76,.2);position:relative;overflow:hidden;
+    }
+    .genesis-badge-icon.visible{display:flex}
+    .genesis-badge-icon::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(240,192,64,.5),transparent)}
+    .genesis-badge-icon::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(201,168,76,.2),transparent)}
+    .gb-hex{
+      width:44px;height:44px;flex-shrink:0;
+      background:linear-gradient(135deg,#c9a84c,#8b6914);
+      clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+      display:flex;align-items:center;justify-content:center;
+      font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:#05060a;
+    }
+    .gb-info{flex:1}
+    .gb-tier{font-size:10px;letter-spacing:.14em;font-weight:700;margin-bottom:2px}
+    .gb-tier.founding{color:#f0c040}
+    .gb-tier.hundred{color:#c9a84c}
+    .gb-tier.fivehundred{color:#a08535}
+    .gb-tier.thousand{color:#8b6914}
+    .gb-tier.genesis{color:#6b5210}
+    .gb-pos{font-size:11px;color:var(--muted)}
+    .gb-sparkle{position:absolute;top:8px;right:12px;font-size:10px;color:rgba(201,168,76,.4);letter-spacing:.06em;font-weight:600}
+
+    /* ── Balance ── */
+    .bal-amount{font-family:'Playfair Display',serif;font-size:clamp(36px,5vw,48px);font-weight:300;color:var(--text);line-height:1;margin-bottom:6px}
+    .bal-meta{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:8px;margin-bottom:20px}
+    .bal-dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
+
+    /* ── Lock progress ── */
+    .lock-card{padding:16px;background:rgba(255,255,255,.015);border:1px solid var(--border2);border-radius:var(--rs);margin-bottom:16px}
+    .lock-bar-bg{height:3px;border-radius:2px;background:rgba(255,255,255,.05);overflow:hidden;margin:10px 0 6px}
+    .lock-bar-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--gold),var(--gold-b));transition:width 1s ease}
+    .lock-meta{display:flex;justify-content:space-between;font-size:10px;color:var(--dim)}
+
+    /* ── Positions ── */
+    .pos-row{
+      display:grid;grid-template-columns:80px 1fr 1fr 90px 120px;gap:8px;align-items:center;
+      padding:14px 16px;border-bottom:1px solid var(--border2);font-size:12px;
+      transition:background .15s;
+    }
+    .pos-row:hover{background:rgba(201,168,76,.02)}
+    .pos-row:last-child{border:none}
+    .pos-head{font-size:9px;letter-spacing:.08em;color:var(--dim);font-weight:600;text-transform:uppercase;padding:10px 16px;border-bottom:1px solid var(--border)}
+    .pos-tier{padding:3px 8px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:.04em}
+    .pos-status{padding:2px 8px;border-radius:10px;font-size:9px;font-weight:600;letter-spacing:.06em}
+
+    /* ── Right panel: Deposit ── */
+    .tier-selector{display:flex;gap:8px;margin-bottom:18px}
+    .tier-btn{
+      flex:1;padding:16px 12px;border-radius:var(--rs);
+      border:1px solid var(--border);background:transparent;
+      text-align:center;transition:all .2s;position:relative;overflow:hidden;
+    }
+    .tier-btn:hover{border-color:rgba(201,168,76,.2);background:rgba(201,168,76,.02)}
+    .tier-btn.sel{border-color:rgba(201,168,76,.4);background:rgba(201,168,76,.05);animation:glow 3s ease-in-out infinite}
+    .tier-btn.sel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--gold),var(--gold-b))}
+    .tier-btn-name{font-size:12px;color:var(--text);font-weight:600;margin-bottom:4px}
+    .tier-btn-apy{font-family:'Playfair Display',serif;font-size:22px;font-weight:300}
+    .tier-btn-lock{font-size:9px;color:var(--dim);margin-top:4px;letter-spacing:.04em}
+
+    .amt-tabs{display:flex;gap:2px;margin-bottom:16px;background:rgba(255,255,255,.02);padding:3px;border-radius:var(--rs)}
+    .amt-tab{flex:1;padding:8px;border-radius:6px;font-size:10px;letter-spacing:.08em;border:none;font-weight:600;color:var(--dim);background:transparent;transition:all .2s}
+    .amt-tab.act{background:rgba(255,255,255,.06);color:var(--text)}
+
+    .amt-input-wrap{position:relative;margin-bottom:12px}
+    .amt-input{
+      width:100%;padding:16px 18px 16px 32px;
+      background:rgba(255,255,255,.025);border:1px solid var(--border);
+      border-radius:var(--rs);color:var(--text);font-family:'DM Mono',monospace;
+      font-size:22px;transition:border-color .2s;
+    }
+    .amt-input:focus{border-color:rgba(201,168,76,.35)}
+    .amt-input::placeholder{color:#1a1c22}
+    .amt-prefix{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:18px;color:var(--dim)}
+
+    .quick-row{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+    .q-btn{padding:6px 12px;border-radius:6px;font-size:10px;font-weight:600;background:rgba(255,255,255,.025);border:1px solid var(--border);color:var(--muted);transition:all .15s;letter-spacing:.04em}
+    .q-btn:hover{border-color:rgba(201,168,76,.2);color:var(--gold);background:rgba(201,168,76,.04)}
+
+    .preview{background:rgba(255,255,255,.015);border:1px solid var(--border2);border-radius:var(--rs);padding:14px 16px;margin-bottom:14px}
+    .preview-row{display:flex;justify-content:space-between;padding:5px 0;font-size:11px}
+    .preview-row:not(:last-child){border-bottom:1px solid rgba(255,255,255,.03)}
+    .preview-l{color:var(--muted)}.preview-v{color:var(--text2);font-weight:500}
+
+    .action-btn{
+      width:100%;padding:15px;border-radius:var(--rs);font-size:12px;
+      letter-spacing:.1em;border:none;font-weight:700;transition:all .2s;
+    }
+    .action-btn:hover{transform:translateY(-1px);filter:brightness(1.1)}
+    .action-btn.dep{background:linear-gradient(135deg,var(--gold),#8b6914);color:#05060a}
+    .action-btn.wtd{background:var(--red-g);color:var(--red);border:1px solid rgba(248,113,113,.18)}
+
+    .warn{padding:8px 14px;font-size:10px;color:var(--red);line-height:1.6;background:var(--red-g);border:1px solid rgba(248,113,113,.1);border-radius:6px;margin-bottom:12px;font-weight:500}
+
+    .ref-box{margin-top:16px;padding:14px;border-radius:var(--rs);background:rgba(201,168,76,.02);border:1px solid var(--border)}
+    .ref-title{font-size:11px;color:var(--gold);font-weight:600;margin-bottom:4px}
+    .ref-desc{font-size:10px;color:var(--dim);line-height:1.5;margin-bottom:10px}
+    .ref-link{padding:8px 12px;border-radius:6px;font-size:10px;background:rgba(255,255,255,.025);border:1px solid var(--border);color:var(--gold);word-break:break-all}
+
+    /* ── Empty state ── */
+    .empty{text-align:center;padding:40px 20px}
+    .empty-icon{font-size:40px;margin-bottom:14px;opacity:.5}
+    .empty-title{font-family:'Playfair Display',serif;font-size:20px;color:var(--text);margin-bottom:8px;font-weight:300}
+    .empty-desc{font-size:11px;color:var(--muted);line-height:1.7;max-width:280px;margin:0 auto 20px}
+    .empty-btn{padding:11px 24px;border-radius:var(--rs);border:none;background:linear-gradient(135deg,var(--gold),#8b6914);color:#05060a;font-size:11px;letter-spacing:.08em;font-weight:600}
+
+    /* ── Footer ── */
+    footer{border-top:1px solid var(--border);padding:28px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;position:relative;z-index:1;max-width:1280px;margin:0 auto}
+    .f-copy{font-size:9px;color:var(--dim);letter-spacing:.06em;font-weight:500}
+    .f-links{display:flex;gap:14px}
+    .f-link{font-size:9px;color:var(--dim);text-decoration:none;letter-spacing:.06em;transition:color .2s;font-weight:500}
+    .f-link:hover{color:var(--gold)}
+
+    /* ── Responsive ── */
+    @media(max-width:960px){.grid{grid-template-columns:1fr}.stats-row{grid-template-columns:repeat(3,1fr)}.top-nav{display:none}}
+    @media(max-width:600px){.stats-row{grid-template-columns:1fr 1fr}.tier-selector{flex-direction:column}.chart-body{height:220px}.pos-row{grid-template-columns:60px 1fr 1fr 80px;font-size:11px}.pos-row>:nth-child(5){display:none}.top{padding:0 12px}.dash{padding:12px 10px 40px}}
+  </style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<div class="scan-lines"></div>
+
+<!-- ── Top Bar ── -->
+<div class="top">
+  <div class="top-left">
+    <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none">
+      <div class="logo">V</div>
+      <span class="logo-name">NEXVAULT</span>
+    </a>
+    <div class="top-sep"></div>
+    <div class="top-nav">
+      <a href="/app" class="top-link act">DASHBOARD</a>
+    </div>
+  </div>
+  <div class="top-right">
+    <div class="net-pill"><span style="margin-right:4px">&#x25CF;</span> NEXUS TESTNET</div>
+    <button class="w-btn" id="wallet-btn">
+      <span style="font-size:13px">&#x25C8;</span>
+      <span id="wallet-text">CONNECT WALLET</span>
+    </button>
+  </div>
+</div>
+
+<!-- ── Dashboard ── -->
+<div class="dash">
+
+  <!-- Protocol Stats -->
+  <div class="stats-row fi">
+    <div class="stat-hex">
+      <div class="stat-label">Total Value Locked</div>
+      <div class="stat-val" style="color:var(--gold)">$0.00</div>
+      <div class="stat-sub">All deposits combined</div>
+    </div>
+    <div class="stat-hex">
+      <div class="stat-label">APY Range</div>
+      <div class="stat-val" style="color:var(--purple)">3.80 – 4.44%</div>
+      <div class="stat-sub">Across 3 lock tiers</div>
+    </div>
+    <div class="stat-hex">
+      <div class="stat-label">Depositors</div>
+      <div class="stat-val" style="color:var(--blue)">0</div>
+      <div class="stat-sub">Be the first</div>
+    </div>
+    <div class="stat-hex">
+      <div class="stat-label">GYDS Yield Paid</div>
+      <div class="stat-val" style="color:var(--green)">$0.00</div>
+      <div class="stat-sub">All time</div>
+    </div>
+    <div class="stat-hex">
+      <div class="stat-label">Your Rank</div>
+      <div class="stat-val" style="color:var(--gold)">&#x2014;</div>
+      <div class="stat-sub">Connect wallet</div>
+    </div>
+  </div>
+
+  <!-- ── TradingView-Style Yield Chart ── -->
+  <div class="chart-card fi fi1">
+    <div class="chart-header">
+      <div class="chart-pair">
+        <span class="chart-pair-name">USDX / YIELD</span>
+        <span class="chart-pair-change up" id="chart-change">+0.00%</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px">
+        <div class="chart-timeframes">
+          <button class="chart-tf" onclick="setChartTF('1D',this)">1D</button>
+          <button class="chart-tf" onclick="setChartTF('1W',this)">1W</button>
+          <button class="chart-tf act" onclick="setChartTF('1M',this)">1M</button>
+          <button class="chart-tf" onclick="setChartTF('3M',this)">3M</button>
+          <button class="chart-tf" onclick="setChartTF('1Y',this)">1Y</button>
+          <button class="chart-tf" onclick="setChartTF('ALL',this)">ALL</button>
+        </div>
+      </div>
+    </div>
+    <div class="chart-body">
+      <div class="chart-overlay">
+        <div class="chart-overlay-val" id="chart-value">$0.00</div>
+        <div class="chart-overlay-sub" id="chart-sub">Yield growth since lock start</div>
+      </div>
+      <canvas id="yield-chart"></canvas>
+    </div>
+    <div class="chart-legend">
+      <span><div class="chart-legend-dot" style="background:var(--gold)"></div> Balance + Yield</span>
+      <span><div class="chart-legend-dot" style="background:rgba(201,168,76,.25)"></div> Principal (base)</span>
+      <span><div class="chart-legend-dot" style="background:var(--green)"></div> Accrued Yield</span>
+    </div>
+  </div>
+
+  <!-- ── Main Grid ── -->
+  <div class="grid">
+
+    <!-- LEFT COLUMN -->
+    <div>
+
+      <!-- Balance + Live Yield -->
+      <div class="card fi fi2" style="margin-bottom:20px">
+        <div class="card-h">
+          <span class="card-t">Your Vault</span>
+          <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--green);font-weight:500">
+            <div style="width:5px;height:5px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite"></div>LIVE
+          </div>
+        </div>
+        <div class="card-b">
+
+          <!-- Empty state -->
+          <div class="empty" id="connect-prompt">
+            <div class="empty-icon">&#x25C8;</div>
+            <div class="empty-title">Connect Your Wallet</div>
+            <div class="empty-desc">Connect MetaMask to view your vault balance, track live yield, and manage deposits.</div>
+            <button class="empty-btn">CONNECT METAMASK</button>
+          </div>
+
+          <!-- Connected state -->
+          <div id="balance-content" style="display:none">
+
+            <!-- Genesis Badge (only visible to NFT holders) -->
+            <div class="genesis-badge-icon" id="genesis-badge">
+              <div class="gb-hex" id="gb-hex">V</div>
+              <div class="gb-info">
+                <div class="gb-tier" id="gb-tier">FOUNDING TEN</div>
+                <div class="gb-pos" id="gb-pos">Genesis Position #1 of 5,000</div>
+              </div>
+              <div class="gb-sparkle">VAULT GENESIS</div>
+            </div>
+
+            <div class="bal-amount">$<span id="user-balance">10,000.00</span></div>
+            <div class="bal-meta">
+              <div class="bal-dot"></div>
+              <span>USDX</span>
+              <span style="color:var(--dim)">&#x00B7;</span>
+              <span style="color:var(--blue)">1-Year Tier</span>
+              <span style="color:var(--dim)">&#x00B7;</span>
+              <span style="color:var(--gold);font-weight:600">3.80% APY</span>
+            </div>
+
+            <!-- Live yield feed -->
+            <div class="yield-feed">
+              <div class="yield-feed-header">
+                <div class="yield-feed-dot"></div>
+                <span class="yield-feed-label">Real-Time Yield Feed</span>
+              </div>
+              <div class="yield-ticker" id="yield-ticker">+0.00000000 <span style="font-size:14px;color:var(--muted)">USDX</span></div>
+              <div class="yield-rate">Earning <span id="yield-per-sec" style="color:var(--green)">$0.00000121</span> / second &nbsp;&#x00B7;&nbsp; <span id="yield-per-day" style="color:var(--green)">$1.04</span> / day</div>
+              <div class="yield-stats">
+                <div class="yield-stat">
+                  <div class="yield-stat-label">Today</div>
+                  <div class="yield-stat-val" id="yield-today">+$0.00</div>
+                </div>
+                <div class="yield-stat">
+                  <div class="yield-stat-label">This Month</div>
+                  <div class="yield-stat-val" id="yield-month">+$0.00</div>
+                </div>
+                <div class="yield-stat">
+                  <div class="yield-stat-label">Total Earned</div>
+                  <div class="yield-stat-val" id="yield-total">+$0.00</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Lock progress -->
+            <div class="lock-card">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:11px;color:var(--text);font-weight:500">Lock Progress</span>
+                <span style="font-size:11px;color:var(--gold);font-weight:600" id="lock-pct">0%</span>
+              </div>
+              <div class="lock-bar-bg"><div class="lock-bar-fill" id="lock-bar" style="width:0%"></div></div>
+              <div class="lock-meta">
+                <span>Locked: Mar 31, 2026</span>
+                <span>Unlocks: Mar 31, 2027</span>
+              </div>
+            </div>
+
+            <!-- Auto-compound -->
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-top:1px solid var(--border2)">
+              <div>
+                <div style="font-size:12px;color:var(--text);font-weight:500">Auto-Compound</div>
+                <div style="font-size:10px;color:var(--muted)">Reinvest yield automatically</div>
+              </div>
+              <div id="ac-toggle" style="width:40px;height:22px;border-radius:11px;background:rgba(201,168,76,.55);position:relative;cursor:pointer;transition:background .2s" onclick="toggleAC()">
+                <div id="ac-knob" style="position:absolute;top:2px;left:20px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .2s"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Positions -->
+      <div class="card fi fi3">
+        <div class="card-h">
+          <span class="card-t">Positions</span>
+        </div>
+        <div class="pos-head" style="display:grid;grid-template-columns:80px 1fr 1fr 90px 120px;gap:8px">
+          <span>Tier</span><span>Principal</span><span>Yield</span><span>Status</span><span>Unlock</span>
+        </div>
+        <div id="positions-list">
+          <div style="text-align:center;padding:28px;font-size:11px;color:var(--dim)">Connect wallet to view positions</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div>
+      <div class="card fi fi4">
+        <div class="card-h">
+          <span class="card-t">New Deposit</span>
+          <div style="padding:2px 8px;border-radius:4px;font-size:9px;font-weight:600;letter-spacing:.06em;background:var(--gold-dim);border:1px solid rgba(201,168,76,.2);color:var(--gold)">USDX</div>
+        </div>
+        <div class="card-b">
+
+          <!-- Deposit / Withdraw tabs -->
+          <div class="amt-tabs">
+            <button class="amt-tab act" id="tab-dep" onclick="setAction('dep')">DEPOSIT</button>
+            <button class="amt-tab" id="tab-wtd" onclick="setAction('wtd')">WITHDRAW</button>
+          </div>
+
+          <!-- Tier selector -->
+          <div style="font-size:9px;letter-spacing:.1em;color:var(--dim);font-weight:600;margin-bottom:8px;text-transform:uppercase">Select Yield Tier</div>
+          <div class="tier-selector">
+            <button class="tier-btn sel" id="t1" onclick="pickTier('1yr',this)">
+              <div class="tier-btn-name">1-YR</div>
+              <div class="tier-btn-apy" style="color:var(--blue)">3.80%</div>
+              <div class="tier-btn-lock">365 days</div>
+            </button>
+            <button class="tier-btn" id="t3" onclick="pickTier('3yr',this)">
+              <div class="tier-btn-name">3-YR</div>
+              <div class="tier-btn-apy" style="color:var(--purple)">4.10%</div>
+              <div class="tier-btn-lock">1,095 days</div>
+            </button>
+            <button class="tier-btn" id="t5" onclick="pickTier('5yr',this)">
+              <div class="tier-btn-name">5-YR</div>
+              <div class="tier-btn-apy" style="color:var(--gold)">4.44%</div>
+              <div class="tier-btn-lock">1,825 days</div>
+            </button>
+          </div>
+
+          <!-- Amount -->
+          <div style="font-size:9px;letter-spacing:.1em;color:var(--dim);font-weight:600;margin-bottom:6px;text-transform:uppercase">Amount</div>
+          <div class="amt-input-wrap">
+            <span class="amt-prefix">$</span>
+            <input class="amt-input" type="number" placeholder="0.00" id="amount-input" oninput="updatePreview()">
+          </div>
+          <div class="quick-row">
+            <button class="q-btn" onclick="setAmt(500)">$500</button>
+            <button class="q-btn" onclick="setAmt(1000)">$1K</button>
+            <button class="q-btn" onclick="setAmt(5000)">$5K</button>
+            <button class="q-btn" onclick="setAmt(10000)">$10K</button>
+            <button class="q-btn" style="margin-left:auto" onclick="setAmt('max')">MAX</button>
+          </div>
+
+          <!-- Preview -->
+          <div class="preview" id="preview-box">
+            <div style="font-size:9px;letter-spacing:.08em;color:var(--dim);font-weight:600;margin-bottom:8px">PREVIEW</div>
+            <div class="preview-row"><span class="preview-l">You deposit</span><span class="preview-v" id="pv-amt">$0.00 USDX</span></div>
+            <div class="preview-row"><span class="preview-l">Lock tier</span><span class="preview-v" id="pv-tier">1-Year &#x2014; 3.80% APY</span></div>
+            <div class="preview-row"><span class="preview-l">Est. yearly yield</span><span class="preview-v" style="color:var(--green)" id="pv-yield">+$0.00</span></div>
+            <div class="preview-row"><span class="preview-l">% change at unlock</span><span class="preview-v" style="color:var(--green)" id="pv-pct">+0.00%</span></div>
+            <div class="preview-row"><span class="preview-l">Unlocks</span><span class="preview-v" id="pv-unlock">&#x2014;</span></div>
+          </div>
+
+          <div class="warn">&#x26A0;&#xFE0F; Contracts tested (175/175) but not yet third-party audited. Deposit what you're comfortable with.</div>
+
+          <button class="action-btn dep" id="main-btn">DEPOSIT USDX AT 3.80% APY</button>
+
+          <!-- Referral -->
+          <div class="ref-box">
+            <div class="ref-title">Referral Boost <span style="font-size:9px;padding:2px 6px;border-radius:4px;background:var(--gold-dim);border:1px solid rgba(201,168,76,.15);margin-left:6px">+0.5% / REF</span></div>
+            <div class="ref-desc">Share your link to earn +0.50% bonus APY per referral (max +2.00%).</div>
+            <div class="ref-link">Connect wallet to get your referral link</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /grid -->
+</div><!-- /dash -->
+
+<footer>
+  <div class="f-copy">&copy; 2026 NEXVAULT &middot; BUILT ON NEXUS.XYZ</div>
+  <div class="f-links">
+    <a href="/" class="f-link">HOME</a>
+    <a href="/about" class="f-link">ABOUT</a>
+    <a href="/security" class="f-link">SECURITY</a>
+    <a href="/news" class="f-link">NEWS</a>
+    <a href="/nexvault-whitepaper.pdf" target="_blank" class="f-link">WHITEPAPER</a>
+    <a href="/terms" class="f-link">TERMS</a>
+  </div>
+</footer>
+
+<script>
+// ── Particle background ──
+const canvas = document.getElementById('bg-canvas');
+const ctx = canvas.getContext('2d');
+let W, H, particles = [];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+
+function initParticles() {
+  particles = [];
+  const count = Math.floor((W * H) / 22000);
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x: Math.random() * W, y: Math.random() * H,
+      r: Math.random() * 1.1 + 0.2,
+      vx: (Math.random() - .5) * 0.12, vy: (Math.random() - .5) * 0.12,
+      o: Math.random() * 0.35 + 0.05,
+    });
+  }
+}
+
+function drawParticles() {
+  ctx.clearRect(0, 0, W, H);
+  const grd = ctx.createRadialGradient(W*.5, H*.3, 0, W*.5, H*.3, W*.5);
+  grd.addColorStop(0, 'rgba(201,168,76,0.025)');
+  grd.addColorStop(1, 'transparent');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+  particles.forEach(p => {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+    if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(201,168,76,${p.o})`;
+    ctx.fill();
+  });
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i + 1; j < particles.length; j++) {
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 100) {
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.strokeStyle = `rgba(201,168,76,${0.04 * (1 - dist/100)})`;
+        ctx.lineWidth = 0.4;
+        ctx.stroke();
+      }
+    }
+  }
+  requestAnimationFrame(drawParticles);
+}
+
+window.addEventListener('resize', () => { resize(); initParticles(); });
+resize(); initParticles(); drawParticles();
+
+// ── TradingView-style chart with hover crosshair ──
+let chartState = { data: [], baseVal: 10000, minV: 0, maxV: 0, range: 1, w: 0, h: 0, padL: 40, padR: 90, padT: 40, padB: 20 };
+
+function drawYieldChart(tf) {
+  const c = document.getElementById('yield-chart');
+  const cx = c.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = c.parentElement.getBoundingClientRect();
+  c.width = rect.width * dpr;
+  c.height = rect.height * dpr;
+  c.style.width = rect.width + 'px';
+  c.style.height = rect.height + 'px';
+  cx.scale(dpr, dpr);
+  const w = rect.width, h = rect.height;
+  chartState.w = w; chartState.h = h;
+
+  // Generate simulated yield growth data
+  const points = tf === '1D' ? 96 : tf === '1W' ? 168 : tf === '1M' ? 30 : tf === '3M' ? 90 : tf === '1Y' ? 365 : 730;
+  const baseVal = 10000;
+  const dailyRate = 0.038 / 365;
+  const data = [];
+  for (let i = 0; i <= points; i++) {
+    const noise = (Math.random() - 0.5) * 0.0001 * i;
+    data.push(baseVal * (1 + dailyRate * i + noise));
+  }
+  chartState.data = data; chartState.baseVal = baseVal;
+
+  const minV = Math.min(...data) * 0.9999;
+  const maxV = Math.max(...data) * 1.0001;
+  const range = maxV - minV || 1;
+  chartState.minV = minV; chartState.maxV = maxV; chartState.range = range;
+
+  // Grid lines
+  cx.strokeStyle = 'rgba(201,168,76,0.04)';
+  cx.lineWidth = 0.5;
+  for (let i = 0; i < 5; i++) {
+    const y = 40 + (h - 60) * i / 4;
+    cx.beginPath(); cx.moveTo(40, y); cx.lineTo(w - 10, y); cx.stroke();
+  }
+
+  // Price labels
+  cx.font = '10px "DM Mono"';
+  cx.fillStyle = '#374151';
+  for (let i = 0; i < 5; i++) {
+    const val = maxV - range * i / 4;
+    const y = 40 + (h - 60) * i / 4;
+    cx.fillText('$' + val.toFixed(2), w - 80, y - 4);
+  }
+
+  // Fill gradient under line
+  const grd = cx.createLinearGradient(0, 40, 0, h - 20);
+  grd.addColorStop(0, 'rgba(201,168,76,0.12)');
+  grd.addColorStop(1, 'rgba(201,168,76,0)');
+  cx.beginPath();
+  cx.moveTo(40, h - 20);
+  data.forEach((v, i) => {
+    const x = 40 + (w - 90) * i / (data.length - 1);
+    const y = 40 + (h - 60) * (1 - (v - minV) / range);
+    if (i === 0) cx.lineTo(x, y); else cx.lineTo(x, y);
+  });
+  cx.lineTo(40 + (w - 90), h - 20);
+  cx.closePath();
+  cx.fillStyle = grd;
+  cx.fill();
+
+  // Main line
+  cx.beginPath();
+  data.forEach((v, i) => {
+    const x = 40 + (w - 90) * i / (data.length - 1);
+    const y = 40 + (h - 60) * (1 - (v - minV) / range);
+    if (i === 0) cx.moveTo(x, y); else cx.lineTo(x, y);
+  });
+  cx.strokeStyle = '#c9a84c';
+  cx.lineWidth = 1.5;
+  cx.stroke();
+
+  // Principal baseline (flat)
+  cx.beginPath();
+  const baseY = 40 + (h - 60) * (1 - (baseVal - minV) / range);
+  cx.moveTo(40, baseY);
+  cx.lineTo(40 + (w - 90), baseY);
+  cx.strokeStyle = 'rgba(201,168,76,0.2)';
+  cx.lineWidth = 1;
+  cx.setLineDash([4, 4]);
+  cx.stroke();
+  cx.setLineDash([]);
+
+  // Green yield area
+  cx.beginPath();
+  cx.moveTo(40, baseY);
+  data.forEach((v, i) => {
+    const x = 40 + (w - 90) * i / (data.length - 1);
+    const y = 40 + (h - 60) * (1 - (v - minV) / range);
+    cx.lineTo(x, y);
+  });
+  cx.lineTo(40 + (w - 90), baseY);
+  cx.closePath();
+  const grd2 = cx.createLinearGradient(0, baseY - 40, 0, baseY);
+  grd2.addColorStop(0, 'rgba(74,222,128,0.08)');
+  grd2.addColorStop(1, 'rgba(74,222,128,0)');
+  cx.fillStyle = grd2;
+  cx.fill();
+
+  // Endpoint dot
+  const lastX = 40 + (w - 90);
+  const lastY = 40 + (h - 60) * (1 - (data[data.length-1] - minV) / range);
+  cx.beginPath();
+  cx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+  cx.fillStyle = '#c9a84c';
+  cx.fill();
+  cx.beginPath();
+  cx.arc(lastX, lastY, 7, 0, Math.PI * 2);
+  cx.strokeStyle = 'rgba(201,168,76,0.3)';
+  cx.lineWidth = 1;
+  cx.stroke();
+
+  // Update overlay
+  const lastVal = data[data.length - 1];
+  const change = ((lastVal - baseVal) / baseVal * 100).toFixed(2);
+  document.getElementById('chart-value').textContent = '$' + lastVal.toFixed(2);
+  document.getElementById('chart-change').textContent = '+' + change + '%';
+  document.getElementById('chart-change').className = 'chart-pair-change up';
+}
+
+let currentTF = '1M';
+function setChartTF(tf, el) {
+  currentTF = tf;
+  document.querySelectorAll('.chart-tf').forEach(b => b.classList.remove('act'));
+  if (el) el.classList.add('act');
+  drawYieldChart(tf);
+}
+
+// Initial draw
+setTimeout(() => drawYieldChart('1M'), 100);
+window.addEventListener('resize', () => drawYieldChart(currentTF));
+
+// ── Chart hover crosshair + tooltip ──
+(function() {
+  const chartCanvas = document.getElementById('yield-chart');
+  const chartBody = chartCanvas.parentElement;
+
+  // Create tooltip element
+  const tooltip = document.createElement('div');
+  tooltip.style.cssText = 'position:absolute;display:none;pointer-events:none;z-index:10;background:rgba(5,6,10,.92);border:1px solid rgba(201,168,76,.3);border-radius:8px;padding:10px 14px;font-family:"DM Mono",monospace;backdrop-filter:blur(8px);min-width:140px';
+  chartBody.appendChild(tooltip);
+
+  // Create crosshair lines
+  const vLine = document.createElement('div');
+  vLine.style.cssText = 'position:absolute;display:none;pointer-events:none;z-index:5;width:1px;top:0;bottom:0;background:rgba(201,168,76,.25);border-left:1px dashed rgba(201,168,76,.3)';
+  chartBody.appendChild(vLine);
+
+  const hLine = document.createElement('div');
+  hLine.style.cssText = 'position:absolute;display:none;pointer-events:none;z-index:5;height:1px;left:0;right:0;background:rgba(201,168,76,.15);border-top:1px dashed rgba(201,168,76,.2)';
+  chartBody.appendChild(hLine);
+
+  // Create price tag on right edge
+  const priceTag = document.createElement('div');
+  priceTag.style.cssText = 'position:absolute;display:none;pointer-events:none;z-index:10;right:4px;background:rgba(201,168,76,.9);color:#05060a;font-family:"DM Mono",monospace;font-size:10px;font-weight:600;padding:2px 6px;border-radius:3px;transform:translateY(-50%)';
+  chartBody.appendChild(priceTag);
+
+  // Dot indicator
+  const hoverDot = document.createElement('div');
+  hoverDot.style.cssText = 'position:absolute;display:none;pointer-events:none;z-index:10;width:8px;height:8px;border-radius:50%;background:#c9a84c;border:2px solid #05060a;box-shadow:0 0 8px rgba(201,168,76,.4);transform:translate(-50%,-50%)';
+  chartBody.appendChild(hoverDot);
+
+  chartBody.style.position = 'relative';
+  chartBody.style.cursor = 'crosshair';
+
+  chartBody.addEventListener('mousemove', function(e) {
+    const s = chartState;
+    if (!s.data.length) return;
+    const rect = chartBody.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const chartW = s.w - s.padL - s.padR;
+    const chartH = s.h - s.padT - s.padB;
+
+    // Map mouse X to data index
+    const relX = (mx - s.padL) / chartW;
+    if (relX < 0 || relX > 1) { tooltip.style.display = 'none'; vLine.style.display = 'none'; hLine.style.display = 'none'; priceTag.style.display = 'none'; hoverDot.style.display = 'none'; return; }
+    const idx = Math.round(relX * (s.data.length - 1));
+    const val = s.data[idx];
+    const yieldEarned = val - s.baseVal;
+    const pctChange = ((val - s.baseVal) / s.baseVal * 100);
+
+    // Calculate Y position for value
+    const dataX = s.padL + chartW * idx / (s.data.length - 1);
+    const dataY = s.padT + chartH * (1 - (val - s.minV) / s.range);
+
+    // Show crosshair
+    vLine.style.display = 'block';
+    vLine.style.left = dataX + 'px';
+    hLine.style.display = 'block';
+    hLine.style.top = dataY + 'px';
+
+    // Show dot
+    hoverDot.style.display = 'block';
+    hoverDot.style.left = dataX + 'px';
+    hoverDot.style.top = dataY + 'px';
+
+    // Show price tag
+    priceTag.style.display = 'block';
+    priceTag.style.top = dataY + 'px';
+    priceTag.textContent = '$' + val.toFixed(2);
+
+    // Show tooltip
+    tooltip.style.display = 'block';
+    const tipX = dataX + 16;
+    const tipY = Math.max(8, Math.min(dataY - 40, s.h - 80));
+    tooltip.style.left = (tipX + 160 > s.w ? dataX - 160 : tipX) + 'px';
+    tooltip.style.top = tipY + 'px';
+    tooltip.innerHTML = '<div style="font-size:9px;color:#5a5650;letter-spacing:.08em;margin-bottom:6px">POINT ' + idx + ' / ' + (s.data.length-1) + '</div>' +
+      '<div style="font-size:16px;color:#f0ece4;font-weight:500;margin-bottom:4px">$' + val.toFixed(2) + '</div>' +
+      '<div style="font-size:11px;color:#4ade80;margin-bottom:2px">Yield: +$' + yieldEarned.toFixed(2) + '</div>' +
+      '<div style="font-size:11px;color:' + (pctChange >= 0 ? '#4ade80' : '#f87171') + '">Change: ' + (pctChange >= 0 ? '+' : '') + pctChange.toFixed(4) + '%</div>';
+
+    // Update the main overlay too
+    document.getElementById('chart-value').textContent = '$' + val.toFixed(2);
+  });
+
+  chartBody.addEventListener('mouseleave', function() {
+    tooltip.style.display = 'none';
+    vLine.style.display = 'none';
+    hLine.style.display = 'none';
+    priceTag.style.display = 'none';
+    hoverDot.style.display = 'none';
+    // Restore last value
+    if (chartState.data.length) {
+      const last = chartState.data[chartState.data.length - 1];
+      document.getElementById('chart-value').textContent = '$' + last.toFixed(2);
+    }
+  });
+})();
+
+// ── Live yield ticker ──
+let yieldAccum = 0;
+const principal = 10000;
+const apy = 0.038;
+const perSecond = principal * apy / (365.25 * 86400);
+let lastTick = performance.now();
+
+function tickYield(now) {
+  const dt = (now - lastTick) / 1000;
+  lastTick = now;
+  yieldAccum += perSecond * dt;
+  const el = document.getElementById('yield-ticker');
+  if (el) el.innerHTML = '+' + yieldAccum.toFixed(8) + ' <span style="font-size:14px;color:#5a5650">USDX</span>';
+  requestAnimationFrame(tickYield);
+}
+requestAnimationFrame(tickYield);
+
+// ── Tier selection ──
+function pickTier(tier, el) {
+  document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('sel'));
+  el.classList.add('sel');
+  const tiers = { '1yr': ['1-Year', '3.80', 365], '3yr': ['3-Year', '4.10', 1095], '5yr': ['5-Year', '4.44', 1825] };
+  const t = tiers[tier];
+  document.getElementById('pv-tier').textContent = t[0] + ' \u2014 ' + t[1] + '% APY';
+  document.getElementById('main-btn').textContent = 'DEPOSIT USDX AT ' + t[1] + '% APY';
+  updatePreview();
+}
+
+// ── Action tabs ──
+function setAction(mode) {
+  document.getElementById('tab-dep').classList.toggle('act', mode === 'dep');
+  document.getElementById('tab-wtd').classList.toggle('act', mode === 'wtd');
+  const btn = document.getElementById('main-btn');
+  if (mode === 'wtd') { btn.className = 'action-btn wtd'; btn.textContent = 'WITHDRAW USDX'; }
+  else { btn.className = 'action-btn dep'; btn.textContent = 'DEPOSIT USDX AT 3.80% APY'; }
+}
+
+// ── Amount helpers ──
+function setAmt(v) {
+  if (v === 'max') v = 50000;
+  document.getElementById('amount-input').value = v;
+  updatePreview();
+}
+
+function updatePreview() {
+  const amt = parseFloat(document.getElementById('amount-input').value) || 0;
+  const sel = document.querySelector('.tier-btn.sel');
+  const apyText = sel ? sel.querySelector('.tier-btn-apy').textContent : '3.80%';
+  const apyVal = parseFloat(apyText) / 100;
+  const yearly = amt * apyVal;
+  const pct = apyVal * 100;
+  document.getElementById('pv-amt').textContent = '$' + amt.toLocaleString('en-US', {minimumFractionDigits:2}) + ' USDX';
+  document.getElementById('pv-yield').textContent = '+$' + yearly.toFixed(2);
+  document.getElementById('pv-pct').textContent = '+' + pct.toFixed(2) + '%';
+  if (amt > 0) {
+    const d = new Date(); d.setDate(d.getDate() + 365);
+    document.getElementById('pv-unlock').textContent = d.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'});
+  }
+}
+
+// ── Auto-compound toggle ──
+let acOn = true;
+function toggleAC() {
+  acOn = !acOn;
+  document.getElementById('ac-toggle').style.background = acOn ? 'rgba(201,168,76,.55)' : 'rgba(255,255,255,.1)';
+  document.getElementById('ac-knob').style.left = acOn ? '20px' : '2px';
+}
+
+// ── Vault Genesis Badge Detection ──
+// Reads VaultGenesisBadge contract to check if connected wallet holds a badge.
+// If yes, shows the tier icon on their dashboard. Regular users see nothing.
+const BADGE_ABI = [
+  "function hasBadge(address) view returns (bool)",
+  "function genesisPosition(address) view returns (uint256)",
+  "function balanceOf(address) view returns (uint256)"
+];
+
+// Badge contract address — fill in after deploy
+const BADGE_ADDRESS = ''; // ← fill in after mainnet deploy
+
+function getGenesisTier(position) {
+  if (position <= 10)   return { label: 'FOUNDING TEN', css: 'founding', icon: 'F' };
+  if (position <= 100)  return { label: 'GENESIS HUNDRED', css: 'hundred', icon: 'C' };
+  if (position <= 500)  return { label: 'GENESIS FIVE HUNDRED', css: 'fivehundred', icon: 'D' };
+  if (position <= 1000) return { label: 'GENESIS THOUSAND', css: 'thousand', icon: 'M' };
+  return { label: 'GENESIS', css: 'genesis', icon: 'G' };
+}
+
+async function checkGenesisBadge(walletAddress, provider) {
+  try {
+    if (!BADGE_ADDRESS || !walletAddress || !provider) return;
+    const badge = new ethers.Contract(BADGE_ADDRESS, BADGE_ABI, provider);
+    const has = await badge.hasBadge(walletAddress);
+    if (!has) return; // Not a badge holder — show nothing
+
+    const position = await badge.genesisPosition(walletAddress);
+    const posNum = Number(position);
+    if (posNum === 0) return;
+
+    const tier = getGenesisTier(posNum);
+    const el = document.getElementById('genesis-badge');
+    const tierEl = document.getElementById('gb-tier');
+    const posEl = document.getElementById('gb-pos');
+    const hexEl = document.getElementById('gb-hex');
+
+    tierEl.textContent = tier.label;
+    tierEl.className = 'gb-tier ' + tier.css;
+    posEl.textContent = 'Genesis Position #' + posNum + ' of 5,000';
+    hexEl.textContent = tier.icon;
+    el.classList.add('visible');
+  } catch (e) {
+    // Silently fail — badge check should never block the dashboard
+    console.log('Genesis badge check skipped:', e.message);
+  }
+}
+
+// Call checkGenesisBadge(address, provider) after wallet connects.
+// Example integration point:
+// async function onWalletConnected(address, provider) {
+//   await checkGenesisBadge(address, provider);
+//   // ... rest of dashboard init
+// }
+</script>
+</body>
+</html>

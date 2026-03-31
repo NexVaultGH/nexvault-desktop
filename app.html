@@ -1550,18 +1550,32 @@ async function connectViaQR() {
     });
 
     // Connect — this triggers display_uri event above, then waits for phone to scan
-    await wcProvider.enable();
+    const enableResult = await wcProvider.enable();
+    console.log('[NexVault] WC enable result:', enableResult);
+    console.log('[NexVault] WC accounts:', wcProvider.accounts);
 
     // Connection successful — phone scanned and approved
     const qrModal = document.getElementById('nv-qr-modal');
     if (qrModal) qrModal.remove();
 
-    const accounts = wcProvider.accounts;
+    // Get accounts — try multiple sources
+    let accounts = wcProvider.accounts;
+    if ((!accounts || !accounts.length) && Array.isArray(enableResult)) {
+      accounts = enableResult;
+    }
+    if (!accounts || !accounts.length) {
+      // Try requesting accounts explicitly
+      try {
+        accounts = await wcProvider.request({ method: 'eth_accounts' });
+      } catch(e) { console.warn('[NexVault] eth_accounts failed:', e); }
+    }
+
+    console.log('[NexVault] Final accounts:', accounts);
+
     if (accounts && accounts.length > 0) {
       window._wcProvider = wcProvider;
       window._activeProvider = wcProvider;
 
-      // Listen for disconnect
       wcProvider.on('disconnect', () => disconnectWallet());
       wcProvider.on('accountsChanged', (accts) => {
         if (!accts.length) disconnectWallet();
@@ -1569,7 +1583,9 @@ async function connectViaQR() {
       });
 
       await finalizeConnection(wcProvider, accounts[0]);
-      showNotif('Wallet connected via QR code', 'ok');
+    } else {
+      showNotif('Connected but no accounts found — try again', 'err');
+      btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
     }
 
   } catch (err) {
@@ -1587,6 +1603,7 @@ async function connectViaQR() {
 
 // ── Finalize connection (shared by extension + QR) ──
 async function finalizeConnection(provider, addressOverride) {
+  console.log('[NexVault] finalizeConnection called, addressOverride:', addressOverride);
   const btn = document.getElementById('wallet-btn');
   try {
     let address = addressOverride;
@@ -1650,15 +1667,19 @@ async function finalizeConnection(provider, addressOverride) {
       try { await checkGenesisBadge(address, provider); } catch(e) {}
     }
 
-    // Dev wallet detection
-    const DEV_WALLET = '0x44e06FB3517Ee815BBA5612F783712Ac4f498ba0';
-    if (address.toLowerCase() === DEV_WALLET.toLowerCase()) {
+    // Dev wallet detection — contract OWNER + any additional dev wallets
+    const DEV_WALLETS = [
+      '0x44e06FB3517Ee815BBA5612F783712Ac4f498ba0', // Contract OWNER
+    ];
+    const isDev = DEV_WALLETS.some(w => w.toLowerCase() === address.toLowerCase());
+    if (isDev) {
       const devPanel = document.getElementById('dev-panel');
       if (devPanel) devPanel.style.display = 'block';
       showNotif('Founder wallet connected — Dev Dashboard active', 'ok');
     } else {
       showNotif('Wallet connected: ' + short, 'ok');
     }
+    console.log('[NexVault] Connected wallet:', address, isDev ? '(DEV)' : '(USER)');
 
     // Account/chain listeners
     try {

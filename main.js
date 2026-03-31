@@ -94,22 +94,26 @@ function createWindow(metamaskLoaded) {
   // Hide the menu bar entirely
   mainWindow.setMenuBarVisibility(false)
 
-  // Load the LOCAL dashboard file — no website, just the app
-  mainWindow.loadFile(path.join(__dirname, 'app.html'))
+  // Load the LIVE dashboard from nexvault.one — same as browser
+  // This ensures MetaMask injection works identically to browser
+  mainWindow.loadURL('https://nexvault.one/app')
 
   // Open external links (docs, explorers, whitepaper) in system browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     // Allow MetaMask popups (extension pages)
     if (url.startsWith('chrome-extension://')) return { action: 'allow' }
+    // Allow nexvault.one/app navigation
+    if (url.startsWith('https://nexvault.one/app')) return { action: 'allow' }
     shell.openExternal(url)
     return { action: 'deny' }
   })
 
-  // Intercept navigation — keep user inside the app
+  // Intercept navigation — keep user on the dashboard only
   mainWindow.webContents.on('will-navigate', (e, url) => {
-    const parsed = new URL(url)
-    // Allow file:// (local) and chrome-extension:// (MetaMask)
-    if (parsed.protocol === 'file:' || parsed.protocol === 'chrome-extension:') return
+    // Allow nexvault.one/app (the dashboard)
+    if (url.startsWith('https://nexvault.one/app')) return
+    // Allow chrome-extension:// (MetaMask popups)
+    if (url.startsWith('chrome-extension://')) return
     // Everything else opens in system browser
     e.preventDefault()
     shell.openExternal(url)

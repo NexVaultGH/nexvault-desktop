@@ -398,7 +398,7 @@
               <span style="color:var(--dim)">&#x00B7;</span>
               <span style="color:var(--blue)">1-Year Tier</span>
               <span style="color:var(--dim)">&#x00B7;</span>
-              <span style="color:var(--gold);font-weight:600">3.80% APY</span>
+              <span id="apy-color" style="color:var(--blue);font-weight:600">3.80% APY</span>
             </div>
 
             <!-- Live yield feed -->
@@ -872,10 +872,19 @@ requestAnimationFrame(tickYield);
 function pickTier(tier, el) {
   document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('sel'));
   el.classList.add('sel');
-  const tiers = { '1yr': ['1-Year', '3.80', 365], '3yr': ['3-Year', '4.10', 1095], '5yr': ['5-Year', '4.44', 1825] };
+  const tiers = {
+    '1yr': ['1-Year', '3.80', 365, 'var(--blue)'],
+    '3yr': ['3-Year', '4.10', 1095, 'var(--purple)'],
+    '5yr': ['5-Year', '4.44', 1825, 'var(--gold)']
+  };
   const t = tiers[tier];
   document.getElementById('pv-tier').textContent = t[0] + ' \u2014 ' + t[1] + '% APY';
   document.getElementById('main-btn').textContent = 'DEPOSIT USDX AT ' + t[1] + '% APY';
+  // Update balance area tier label + APY color
+  const tierLabel = document.querySelector('.bal-meta span[style*="color:var(--blue)"], .bal-meta span[style*="color:var(--purple)"], .bal-meta span[style*="color:var(--gold)"]');
+  if (tierLabel) { tierLabel.style.color = t[3]; tierLabel.textContent = t[0] + ' Tier'; }
+  const apyEl = document.getElementById('apy-color');
+  if (apyEl) { apyEl.style.color = t[3]; apyEl.textContent = t[1] + '% APY'; }
   updatePreview();
 }
 

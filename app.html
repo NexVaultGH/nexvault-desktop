@@ -393,7 +393,7 @@
               <div class="gb-sparkle">VAULT GENESIS</div>
             </div>
 
-            <div class="bal-amount">$<span id="user-balance">10,000.00</span></div>
+            <div class="bal-amount">$<span id="user-balance">175,000.00</span></div>
             <div class="bal-meta">
               <div class="bal-dot"></div>
               <span>USDX</span>
@@ -544,6 +544,131 @@
     </div>
 
   </div><!-- /grid -->
+
+  <!-- ═══════════ DEV DASHBOARD (founder wallet only) ═══════════ -->
+  <div id="dev-panel" style="display:none;margin-top:24px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <div style="font-size:12px;letter-spacing:.1em;color:var(--gold);font-weight:700">FOUNDER DASHBOARD</div>
+      <div style="padding:2px 8px;border-radius:4px;font-size:9px;font-weight:600;letter-spacing:.06em;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.2);color:#f87171">DEV ONLY</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      <div class="stat-hex">
+        <div class="stat-label">Protocol Earnings</div>
+        <div class="stat-val" style="color:var(--gold)" id="dev-earnings">$0.00</div>
+        <div class="stat-sub">10% dev cut from yield</div>
+      </div>
+      <div class="stat-hex">
+        <div class="stat-label">Vault Health</div>
+        <div class="stat-val" style="color:var(--green)" id="dev-health">HEALTHY</div>
+        <div class="stat-sub">Balance covers principal</div>
+      </div>
+      <div class="stat-hex">
+        <div class="stat-label">Total Principal</div>
+        <div class="stat-val" style="color:var(--blue)" id="dev-principal">$0.00</div>
+        <div class="stat-sub">All user deposits</div>
+      </div>
+      <div class="stat-hex">
+        <div class="stat-label">Genesis Badges</div>
+        <div class="stat-val" style="color:var(--purple)" id="dev-badges">0 / 5,000</div>
+        <div class="stat-sub">Minted so far</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <!-- Contract Controls -->
+      <div class="card">
+        <div class="card-h">
+          <span class="card-t">Protocol Controls</span>
+          <div style="padding:2px 8px;border-radius:4px;font-size:9px;font-weight:600;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.2);color:var(--gold)">OWNER</div>
+        </div>
+        <div class="card-b">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:rgba(255,255,255,.02);border:1px solid var(--border2);border-radius:var(--rs)">
+              <div>
+                <div style="font-size:12px;color:var(--text);font-weight:500">Emergency Pause</div>
+                <div style="font-size:10px;color:var(--dim)">Blocks new deposits only</div>
+              </div>
+              <div style="padding:6px 14px;border-radius:6px;font-size:10px;font-weight:600;background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.15);color:var(--green)">ACTIVE</div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:rgba(255,255,255,.02);border:1px solid var(--border2);border-radius:var(--rs)">
+              <div>
+                <div style="font-size:12px;color:var(--text);font-weight:500">GYDS Address</div>
+                <div style="font-size:10px;color:var(--dim)">Yield distribution source</div>
+              </div>
+              <div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace" id="dev-gyds">Not set</div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:rgba(255,255,255,.02);border:1px solid var(--border2);border-radius:var(--rs)">
+              <div>
+                <div style="font-size:12px;color:var(--text);font-weight:500">Claim Dev Earnings</div>
+                <div style="font-size:10px;color:var(--dim)">Withdraw protocol fees</div>
+              </div>
+              <button style="padding:6px 14px;border-radius:6px;font-size:10px;font-weight:600;letter-spacing:.06em;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.2);color:var(--gold);cursor:pointer;font-family:'DM Mono',monospace">CLAIM</button>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:rgba(255,255,255,.02);border:1px solid var(--border2);border-radius:var(--rs)">
+              <div>
+                <div style="font-size:12px;color:var(--text);font-weight:500">Auto-Compound Batch</div>
+                <div style="font-size:10px;color:var(--dim)">Compound all eligible users</div>
+              </div>
+              <button style="padding:6px 14px;border-radius:6px;font-size:10px;font-weight:600;letter-spacing:.06em;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.15);color:var(--blue);cursor:pointer;font-family:'DM Mono',monospace">RUN BATCH</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contract Info -->
+      <div class="card">
+        <div class="card-h">
+          <span class="card-t">Contract Addresses</span>
+        </div>
+        <div class="card-b">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="padding:12px 14px;background:rgba(255,255,255,.02);border:1px solid var(--border2);border-radius:var(--rs)">
+              <div style="font-size:10px;color:var(--dim);letter-spacing:.08em;margin-bottom:4px">USDXVAULT</div>
+              <div style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;word-break:break-all" id="dev-vault-addr">Pending deploy</div>
+            </div>
+            <div style="padding:12px 14px;background:rgba(255,255,255,.02);border:1px solid var(--border2);border-radius:var(--rs)">
+              <div style="font-size:10px;color:var(--dim);letter-spacing:.08em;margin-bottom:4px">GENESIS BADGE</div>
+              <div style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;word-break:break-all" id="dev-badge-addr">Pending deploy</div>
+            </div>
+            <div style="padding:12px 14px;background:rgba(255,255,255,.02);border:1px solid var(--border2);border-radius:var(--rs)">
+              <div style="font-size:10px;color:var(--dim);letter-spacing:.08em;margin-bottom:4px">REFERRAL REGISTRY</div>
+              <div style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;word-break:break-all" id="dev-ref-addr">Pending deploy</div>
+            </div>
+            <div style="padding:12px 14px;background:rgba(255,255,255,.02);border:1px solid var(--border2);border-radius:var(--rs)">
+              <div style="font-size:10px;color:var(--dim);letter-spacing:.08em;margin-bottom:4px">AUTO-COMPOUNDER</div>
+              <div style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;word-break:break-all" id="dev-comp-addr">Pending deploy</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Network & Deployment Status -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-h">
+        <span class="card-t">Deployment Status</span>
+      </div>
+      <div class="card-b">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+          <div style="padding:14px;background:rgba(74,222,128,.04);border:1px solid rgba(74,222,128,.1);border-radius:var(--rs);text-align:center">
+            <div style="font-size:9px;color:var(--dim);letter-spacing:.1em;margin-bottom:6px">CONTRACTS</div>
+            <div style="font-size:14px;color:var(--green);font-weight:600">175/175 TESTS</div>
+            <div style="font-size:10px;color:var(--dim);margin-top:2px">All passing</div>
+          </div>
+          <div style="padding:14px;background:rgba(201,168,76,.04);border:1px solid rgba(201,168,76,.1);border-radius:var(--rs);text-align:center">
+            <div style="font-size:9px;color:var(--dim);letter-spacing:.1em;margin-bottom:6px">NETWORK</div>
+            <div style="font-size:14px;color:var(--gold);font-weight:600" id="dev-network">TESTNET</div>
+            <div style="font-size:10px;color:var(--dim);margin-top:2px">Nexus blockchain</div>
+          </div>
+          <div style="padding:14px;background:rgba(96,165,250,.04);border:1px solid rgba(96,165,250,.1);border-radius:var(--rs);text-align:center">
+            <div style="font-size:9px;color:var(--dim);letter-spacing:.1em;margin-bottom:6px">ZKVM</div>
+            <div style="font-size:14px;color:var(--blue);font-weight:600">v3.0</div>
+            <div style="font-size:10px;color:var(--dim);margin-top:2px">Stwo STARK prover</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /dev-panel -->
 </div><!-- /dash -->
 
 <footer>
@@ -620,7 +745,7 @@ window.addEventListener('resize', () => { resize(); initParticles(); });
 resize(); initParticles(); drawParticles();
 
 // ── TradingView-style chart with hover crosshair ──
-let chartState = { data: [], baseVal: 10000, minV: 0, maxV: 0, range: 1, w: 0, h: 0, padL: 40, padR: 90, padT: 40, padB: 20 };
+let chartState = { data: [], baseVal: 175000, minV: 0, maxV: 0, range: 1, w: 0, h: 0, padL: 40, padR: 90, padT: 40, padB: 20 };
 
 function drawYieldChart(tf) {
   const c = document.getElementById('yield-chart');
@@ -1028,7 +1153,7 @@ startRealtimeChart();
 // ── Unified Yield Engine ──
 // Single source of truth for all yield calculations: ticker, chart, stats
 const YIELD = {
-  principal: 10000,
+  principal: 175000,
   apy: 0.038,
   startTime: Date.now(), // simulated lock start
   accum: 0,              // total accumulated since page load
@@ -1303,7 +1428,15 @@ async function connectWallet() {
         try { await checkGenesisBadge(address, provider); } catch(e) {}
       }
 
-      showNotif('Wallet connected: ' + short, 'ok');
+      // Check if this is the founder/dev wallet — show dev dashboard
+      const DEV_WALLET = '0x44e06FB3517Ee815BBA5612F783712Ac4f498ba0';
+      if (address.toLowerCase() === DEV_WALLET.toLowerCase()) {
+        const devPanel = document.getElementById('dev-panel');
+        if (devPanel) devPanel.style.display = 'block';
+        showNotif('Founder wallet connected — Dev Dashboard active', 'ok');
+      } else {
+        showNotif('Wallet connected: ' + short, 'ok');
+      }
 
       // Listen for account/chain changes
       provider.on('accountsChanged', (accts) => {

@@ -809,10 +809,9 @@ function drawYieldChart(tf) {
     data.push(baseVal + exactYield + noise);
   }
 
-  // Last point = exact current value (principal + accumulated yield)
+  // Last point = exact current value from YIELD engine
   if (data.length > 0) {
-    const totalDays = elapsedMs / 86400000;
-    data[data.length - 1] = baseVal + (baseVal * dailyRate * totalDays) + YIELD.accum;
+    data[data.length - 1] = YIELD.principal + YIELD.accum;
   }
 
   // If only 1 point (just started), add the start point too
@@ -922,15 +921,16 @@ function drawYieldChart(tf) {
   cx.beginPath(); cx.arc(lastX, lastY, 4, 0, Math.PI * 2); cx.fillStyle = '#c9a84c'; cx.fill();
   cx.beginPath(); cx.arc(lastX, lastY, 7, 0, Math.PI * 2); cx.strokeStyle = 'rgba(201,168,76,0.3)'; cx.lineWidth = 1; cx.stroke();
 
-  // ── Update overlay values ──
-  const lastVal = data[data.length - 1];
-  const change = ((lastVal - baseVal) / baseVal * 100).toFixed(2);
-  document.getElementById('chart-value').textContent = '$' + lastVal.toFixed(2);
+  // ── Update overlay — always use YIELD as single source of truth ──
+  const currentBalance = YIELD.principal + YIELD.accum;
+  const change = ((currentBalance - YIELD.principal) / YIELD.principal * 100).toFixed(2);
+  document.getElementById('chart-value').textContent = '$' + currentBalance.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   document.getElementById('chart-change').textContent = '+' + change + '%';
   document.getElementById('chart-change').className = 'chart-pair-change up';
-  // Update subtitle with timeframe
   const tfLabels = {'1D':'Last 24 hours','1W':'Last 7 days','1M':'Last 30 days','3M':'Last 3 months','1Y':'Last 12 months','ALL':'All time'};
-  document.getElementById('chart-sub').textContent = (tfLabels[tf] || 'Yield growth') + ' \u00B7 ' + dates[dates.length-1].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const elapsedDays = (Date.now() - YIELD.startTime) / 86400000;
+  const tfLabel = elapsedDays < 1 ? 'Since lock start' : (tfLabels[tf] || 'Yield growth');
+  document.getElementById('chart-sub').textContent = tfLabel + ' \u00B7 ' + new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 }
 
 let currentTF = '1M';
@@ -953,11 +953,8 @@ function startRealtimeChart() {
   chartUpdateTimer = setInterval(() => {
     if (!chartState.data.length || !chartState.dates) return;
     const lastVal = chartState.data[chartState.data.length - 1];
-    // Use YIELD engine rate for consistency with ticker
-    const yieldPer3Sec = YIELD.perSecond * 3;
-    const noise = (Math.random() - 0.5) * yieldPer3Sec * 0.15;
-    const newVal = lastVal + yieldPer3Sec + noise;
-    // Append new point with current timestamp
+    // Always use YIELD as the source — exact value, no noise divergence
+    const newVal = YIELD.principal + YIELD.accum;
     chartState.data.push(newVal);
     chartState.dates.push(new Date());
     // Keep max 500 points
@@ -1039,10 +1036,11 @@ function drawYieldChartFromState() {
   const lx=padL+chartW, ly=padT+chartH*(1-(data[data.length-1]-minV)/range);
   cx.beginPath(); cx.arc(lx,ly,4,0,Math.PI*2); cx.fillStyle='#c9a84c'; cx.fill();
   cx.beginPath(); cx.arc(lx,ly,7,0,Math.PI*2); cx.strokeStyle='rgba(201,168,76,0.3)'; cx.lineWidth=1; cx.stroke();
-  // Overlay
-  const change=((data[data.length-1]-baseVal)/baseVal*100).toFixed(2);
-  document.getElementById('chart-value').textContent='$'+data[data.length-1].toFixed(2);
-  document.getElementById('chart-change').textContent='+'+change+'%';
+  // Overlay — use YIELD as single source of truth
+  const cb=YIELD.principal+YIELD.accum;
+  const chg=((cb-YIELD.principal)/YIELD.principal*100).toFixed(2);
+  document.getElementById('chart-value').textContent='$'+cb.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  document.getElementById('chart-change').textContent='+'+chg+'%';
 }
 
 startRealtimeChart();
@@ -1165,11 +1163,9 @@ startRealtimeChart();
     hLine.style.display = 'none';
     priceTag.style.display = 'none';
     hoverDot.style.display = 'none';
-    // Restore last value
-    if (chartState.data.length) {
-      const last = chartState.data[chartState.data.length - 1];
-      document.getElementById('chart-value').textContent = '$' + last.toFixed(2);
-    }
+    // Restore to YIELD source of truth
+    const cb = YIELD.principal + YIELD.accum;
+    document.getElementById('chart-value').textContent = '$' + cb.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   });
 })();
 

@@ -1,10 +1,10 @@
 'use strict'
 
-const { contextBridge } = require('electron')
+const { contextBridge, ipcRenderer } = require('electron')
 
-// Expose desktop app info to the renderer
 contextBridge.exposeInMainWorld('__nexvaultDesktop', {
-  version:  require('./package.json').version,
+  isElectron: true,
+  version: require('./package.json').version,
   platform: process.platform,
-  isDesktopApp: true
+  openInBrowser: (url) => ipcRenderer.invoke('open-in-browser', url)
 })

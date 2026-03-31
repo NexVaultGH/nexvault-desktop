@@ -44,6 +44,7 @@
     @keyframes glow{0%,100%{box-shadow:0 0 8px rgba(201,168,76,.15)}50%{box-shadow:0 0 20px rgba(201,168,76,.25)}}
     @keyframes tickGlow{0%{text-shadow:0 0 4px rgba(74,222,128,.3)}50%{text-shadow:0 0 12px rgba(74,222,128,.5)}100%{text-shadow:0 0 4px rgba(74,222,128,.3)}}
     @keyframes slideRight{from{width:0}to{width:var(--w,50%)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
     .fi{animation:fadeIn .5s ease both}
     .fi1{animation-delay:.05s}.fi2{animation-delay:.1s}.fi3{animation-delay:.15s}.fi4{animation-delay:.2s}.fi5{animation-delay:.25s}
 
@@ -275,18 +276,14 @@
 <!-- ── Top Bar ── -->
 <div class="top">
   <div class="top-left">
-    <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none">
+    <div style="display:flex;align-items:center;gap:10px">
       <div class="logo">V</div>
       <span class="logo-name">NEXVAULT</span>
-    </a>
-    <div class="top-sep"></div>
-    <div class="top-nav">
-      <a href="/app" class="top-link act">DASHBOARD</a>
     </div>
   </div>
   <div class="top-right">
     <div class="net-pill"><span style="margin-right:4px">&#x25CF;</span> NEXUS TESTNET</div>
-    <button class="w-btn" id="wallet-btn">
+    <button class="w-btn" id="wallet-btn" onclick="connectWallet()">
       <span style="font-size:13px">&#x25C8;</span>
       <span id="wallet-text">CONNECT WALLET</span>
     </button>
@@ -378,7 +375,7 @@
             <div class="empty-icon">&#x25C8;</div>
             <div class="empty-title">Connect Your Wallet</div>
             <div class="empty-desc">Connect MetaMask to view your vault balance, track live yield, and manage deposits.</div>
-            <button class="empty-btn">CONNECT METAMASK</button>
+            <button class="empty-btn" onclick="connectWallet()">CONNECT METAMASK</button>
           </div>
 
           <!-- Connected state -->
@@ -970,12 +967,164 @@ async function checkGenesisBadge(walletAddress, provider) {
   }
 }
 
-// Call checkGenesisBadge(address, provider) after wallet connects.
-// Example integration point:
-// async function onWalletConnected(address, provider) {
-//   await checkGenesisBadge(address, provider);
-//   // ... rest of dashboard init
-// }
+// ══════════════════════════════════════════════════════
+//  METAMASK WALLET CONNECTION
+// ══════════════════════════════════════════════════════
+
+// EIP-6963 provider store
+const _eip6963Providers = {};
+window.addEventListener('eip6963:announceProvider', (event) => {
+  const { info, provider } = event.detail;
+  if (info && info.rdns && provider) _eip6963Providers[info.rdns] = provider;
+});
+window.dispatchEvent(new Event('eip6963:requestProvider'));
+
+function getMetaMaskProvider() {
+  if (_eip6963Providers['io.metamask']) return _eip6963Providers['io.metamask'];
+  const eth = window.ethereum;
+  if (!eth) return null;
+  if (eth.providers && eth.providers.length) {
+    const mm = eth.providers.find(p => p._metamask !== undefined) || eth.providers.find(p => p.isMetaMask);
+    if (mm) return mm;
+  }
+  if (eth.isMetaMask) return eth;
+  return null;
+}
+
+function waitForMetaMask() {
+  return new Promise(resolve => {
+    window.dispatchEvent(new Event('eip6963:requestProvider'));
+    if (_eip6963Providers['io.metamask']) { resolve(_eip6963Providers['io.metamask']); return; }
+    let elapsed = 0;
+    const timer = setInterval(() => {
+      elapsed += 50;
+      const p = getMetaMaskProvider();
+      if (p) { clearInterval(timer); resolve(p); }
+      else if (elapsed >= 1500) { clearInterval(timer); resolve(null); }
+    }, 50);
+  });
+}
+
+function showNotif(msg, type) {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:11px 26px;border-radius:40px;font-size:12px;z-index:9999;white-space:nowrap;letter-spacing:.04em;font-weight:500;font-family:"DM Mono",monospace;' +
+    (type === 'ok' ? 'background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.25);color:#4ade80' : 'background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.25);color:#f87171');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+async function connectWallet() {
+  const btn = document.getElementById('wallet-btn');
+  btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">&#x25CC;</span> <span>CONNECTING...</span>';
+
+  const provider = await waitForMetaMask();
+
+  if (!provider) {
+    btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
+    // Show install prompt
+    const mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+    const url = mobile ? 'https://metamask.app.link/dapp/nexvault.one/app' : 'https://metamask.io/download';
+    showNotif(mobile ? 'Open in MetaMask app browser' : 'Install MetaMask extension first', 'err');
+    window.open(url, '_blank');
+    return;
+  }
+
+  try {
+    const accounts = await provider.request({ method: 'eth_requestAccounts' });
+    if (accounts && accounts.length > 0) {
+      window._activeProvider = provider;
+      const address = accounts[0];
+      const short = address.slice(0,6) + '...' + address.slice(-4);
+
+      // Update UI
+      btn.innerHTML = '<div style="width:7px;height:7px;border-radius:50%;background:#4ade80"></div> <span>' + short + '</span>';
+      btn.style.borderColor = 'rgba(96,165,250,.3)';
+      btn.style.background = 'rgba(96,165,250,.07)';
+      btn.style.color = '#60a5fa';
+      btn.onclick = function() { disconnectWallet(); };
+
+      // Show connected content, hide connect prompt
+      const prompt = document.getElementById('connect-prompt');
+      const content = document.getElementById('balance-content');
+      if (prompt) prompt.style.display = 'none';
+      if (content) content.style.display = 'block';
+
+      // Update referral link
+      const refEl = document.querySelector('.ref-link');
+      if (refEl) refEl.textContent = 'nexvault.one/app?ref=' + short;
+
+      // Save for auto-reconnect
+      localStorage.setItem('nexvault_wallet', address);
+
+      // Check genesis badge
+      if (typeof checkGenesisBadge === 'function') {
+        try { await checkGenesisBadge(address, provider); } catch(e) {}
+      }
+
+      showNotif('Wallet connected: ' + short, 'ok');
+
+      // Listen for account/chain changes
+      provider.on('accountsChanged', (accts) => {
+        if (!accts || accts.length === 0) disconnectWallet();
+        else window.location.reload();
+      });
+      provider.on('chainChanged', () => window.location.reload());
+    }
+  } catch (err) {
+    btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
+    if (err.code === 4001) showNotif('Connection cancelled', 'err');
+    else if (err.code === -32002) showNotif('MetaMask popup already open — check extension', 'err');
+    else showNotif('Connection failed — try again', 'err');
+  }
+}
+
+function disconnectWallet() {
+  window._activeProvider = null;
+  localStorage.removeItem('nexvault_wallet');
+  const btn = document.getElementById('wallet-btn');
+  btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
+  btn.style.borderColor = 'rgba(201,168,76,.2)';
+  btn.style.background = 'rgba(201,168,76,.06)';
+  btn.style.color = '#c9a84c';
+  btn.onclick = function() { connectWallet(); };
+
+  const prompt = document.getElementById('connect-prompt');
+  const content = document.getElementById('balance-content');
+  if (prompt) prompt.style.display = 'block';
+  if (content) content.style.display = 'none';
+
+  const refEl = document.querySelector('.ref-link');
+  if (refEl) refEl.textContent = 'Connect wallet to get your referral link';
+
+  showNotif('Wallet disconnected', 'ok');
+}
+
+// Auto-reconnect on page load
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('nexvault_wallet');
+  if (!saved) return;
+  waitForMetaMask().then(provider => {
+    if (!provider) { localStorage.removeItem('nexvault_wallet'); return; }
+    provider.request({ method: 'eth_accounts' }).then(accounts => {
+      if (accounts && accounts.length > 0 && accounts[0].toLowerCase() === saved.toLowerCase()) {
+        // Silently reconnect
+        window._activeProvider = provider;
+        const short = accounts[0].slice(0,6) + '...' + accounts[0].slice(-4);
+        const btn = document.getElementById('wallet-btn');
+        btn.innerHTML = '<div style="width:7px;height:7px;border-radius:50%;background:#4ade80"></div> <span>' + short + '</span>';
+        btn.style.borderColor = 'rgba(96,165,250,.3)';
+        btn.style.background = 'rgba(96,165,250,.07)';
+        btn.style.color = '#60a5fa';
+        btn.onclick = function() { disconnectWallet(); };
+        const prompt = document.getElementById('connect-prompt');
+        const content = document.getElementById('balance-content');
+        if (prompt) prompt.style.display = 'none';
+        if (content) content.style.display = 'block';
+      } else { localStorage.removeItem('nexvault_wallet'); }
+    }).catch(() => localStorage.removeItem('nexvault_wallet'));
+  });
+});
 </script>
 </body>
 </html>

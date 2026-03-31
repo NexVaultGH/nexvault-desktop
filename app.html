@@ -267,6 +267,8 @@
     @media(max-width:960px){.grid{grid-template-columns:1fr}.stats-row{grid-template-columns:repeat(3,1fr)}.top-nav{display:none}}
     @media(max-width:600px){.stats-row{grid-template-columns:1fr 1fr}.tier-selector{flex-direction:column}.chart-body{height:220px}.pos-row{grid-template-columns:60px 1fr 1fr 80px;font-size:11px}.pos-row>:nth-child(5){display:none}.top{padding:0 12px}.dash{padding:12px 10px 40px}}
   </style>
+  <!-- ethers.js v6 -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
 </head>
 <body>
 
@@ -631,114 +633,156 @@ function drawYieldChart(tf) {
   c.style.height = rect.height + 'px';
   cx.scale(dpr, dpr);
   const w = rect.width, h = rect.height;
-  chartState.w = w; chartState.h = h;
+  const padL = 40, padR = 90, padT = 40, padB = 40; // extra bottom padding for date labels
+  const chartW = w - padL - padR, chartH = h - padT - padB;
+  chartState.w = w; chartState.h = h; chartState.padL = padL; chartState.padR = padR; chartState.padT = padT; chartState.padB = padB;
 
-  // Generate simulated yield growth data
-  const points = tf === '1D' ? 96 : tf === '1W' ? 168 : tf === '1M' ? 30 : tf === '3M' ? 90 : tf === '1Y' ? 365 : 730;
-  const baseVal = 10000;
-  const dailyRate = 0.038 / 365;
+  // Generate data using the unified YIELD engine so chart matches ticker
+  const now = new Date();
+  const baseVal = YIELD.principal;
+  const dailyRate = YIELD.apy / 365.25;
   const data = [];
-  for (let i = 0; i <= points; i++) {
-    const noise = (Math.random() - 0.5) * 0.0001 * i;
-    data.push(baseVal * (1 + dailyRate * i + noise));
+  const dates = [];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // Each timeframe: generate points at regular intervals going back from now
+  // The LAST point always equals principal + current accumulated yield
+  // Each timeframe: data points represent one unit of that timeframe's granularity
+  // 1D = 24 hourly candles, 1W = 7 daily candles, 1M = 30 daily, 3M = 12 weekly, 1Y = 12 monthly, ALL = 24 monthly
+  const configs = {
+    '1D':  { points: 24,  intervalMs: 3600000,         unit: 'hour'  },  // 24 hours
+    '1W':  { points: 7,   intervalMs: 86400000,        unit: 'day'   },  // 7 days
+    '1M':  { points: 30,  intervalMs: 86400000,        unit: 'day'   },  // 30 days
+    '3M':  { points: 12,  intervalMs: 7 * 86400000,   unit: 'week'  },  // 12 weeks
+    '1Y':  { points: 12,  intervalMs: 30.4 * 86400000, unit: 'month' },  // 12 months
+    'ALL': { points: 24,  intervalMs: 30.4 * 86400000, unit: 'month' },  // 24 months
+  };
+  const cfg = configs[tf] || configs['1M'];
+
+  for (let i = 0; i <= cfg.points; i++) {
+    const d = new Date(now.getTime() - (cfg.points - i) * cfg.intervalMs);
+    dates.push(d);
+    // Calculate exact yield at this point in time
+    const daysFromStart = i * (cfg.intervalMs / 86400000);
+    const exactYield = baseVal * dailyRate * daysFromStart;
+    // Small realistic noise (< 0.1% of yield) for natural look
+    const noise = exactYield * (Math.sin(i * 0.7) * 0.02 + Math.cos(i * 1.3) * 0.01);
+    data.push(baseVal + exactYield + noise);
   }
-  chartState.data = data; chartState.baseVal = baseVal;
+
+  // Ensure the LAST data point matches: principal + current real-time yield
+  data[data.length - 1] = baseVal + YIELD.accum + (baseVal * dailyRate * cfg.points * (cfg.intervalMs / 86400000));
+
+  chartState.data = data; chartState.baseVal = baseVal; chartState.dates = dates; chartState.tf = tf;
 
   const minV = Math.min(...data) * 0.9999;
   const maxV = Math.max(...data) * 1.0001;
   const range = maxV - minV || 1;
   chartState.minV = minV; chartState.maxV = maxV; chartState.range = range;
 
-  // Grid lines
-  cx.strokeStyle = 'rgba(201,168,76,0.04)';
-  cx.lineWidth = 0.5;
+  // ── Grid lines ──
+  cx.strokeStyle = 'rgba(201,168,76,0.04)'; cx.lineWidth = 0.5;
   for (let i = 0; i < 5; i++) {
-    const y = 40 + (h - 60) * i / 4;
-    cx.beginPath(); cx.moveTo(40, y); cx.lineTo(w - 10, y); cx.stroke();
+    const y = padT + chartH * i / 4;
+    cx.beginPath(); cx.moveTo(padL, y); cx.lineTo(w - 10, y); cx.stroke();
   }
 
-  // Price labels
-  cx.font = '10px "DM Mono"';
-  cx.fillStyle = '#374151';
+  // ── Price labels (right side) ──
+  cx.font = '10px "DM Mono"'; cx.fillStyle = '#374151';
   for (let i = 0; i < 5; i++) {
     const val = maxV - range * i / 4;
-    const y = 40 + (h - 60) * i / 4;
+    const y = padT + chartH * i / 4;
     cx.fillText('$' + val.toFixed(2), w - 80, y - 4);
   }
 
-  // Fill gradient under line
-  const grd = cx.createLinearGradient(0, 40, 0, h - 20);
-  grd.addColorStop(0, 'rgba(201,168,76,0.12)');
-  grd.addColorStop(1, 'rgba(201,168,76,0)');
-  cx.beginPath();
-  cx.moveTo(40, h - 20);
-  data.forEach((v, i) => {
-    const x = 40 + (w - 90) * i / (data.length - 1);
-    const y = 40 + (h - 60) * (1 - (v - minV) / range);
-    if (i === 0) cx.lineTo(x, y); else cx.lineTo(x, y);
-  });
-  cx.lineTo(40 + (w - 90), h - 20);
-  cx.closePath();
-  cx.fillStyle = grd;
-  cx.fill();
+  // ── Date labels (bottom X-axis) — labels match the timeframe unit ──
+  cx.font = '9px "DM Mono"'; cx.fillStyle = '#374151'; cx.textAlign = 'center';
+  // Show every data point as a label (or skip some if too many)
+  const maxLabels = Math.min(data.length, tf === '1D' ? 8 : tf === '1W' ? 7 : tf === '1M' ? 6 : tf === '3M' ? 12 : 12);
+  for (let i = 0; i <= maxLabels; i++) {
+    const idx = Math.round(i * (dates.length - 1) / maxLabels);
+    const d = dates[idx];
+    if (!d) continue;
+    const x = padL + chartW * idx / (data.length - 1);
+    let label;
+    if (tf === '1D') {
+      // Hourly: show time
+      label = d.getHours().toString().padStart(2,'0') + ':00';
+    } else if (tf === '1W') {
+      // Daily within a week: show day name + date
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      label = days[d.getDay()] + ' ' + d.getDate();
+    } else if (tf === '1M') {
+      // Daily within a month: show month + day
+      label = months[d.getMonth()] + ' ' + d.getDate();
+    } else if (tf === '3M') {
+      // Weekly: show "Week of Month Day"
+      label = months[d.getMonth()] + ' ' + d.getDate();
+    } else {
+      // Monthly (1Y, ALL): show month + year
+      label = months[d.getMonth()] + ' \'' + d.getFullYear().toString().slice(2);
+    }
+    // Vertical tick mark
+    cx.strokeStyle = 'rgba(201,168,76,0.06)'; cx.lineWidth = 0.5;
+    cx.beginPath(); cx.moveTo(x, padT); cx.lineTo(x, padT + chartH); cx.stroke();
+    // Label
+    cx.fillStyle = '#374151';
+    cx.fillText(label, x, padT + chartH + 16);
+  }
+  cx.textAlign = 'start'; // reset
 
-  // Main line
-  cx.beginPath();
+  // ── Fill gradient under line ──
+  const grd = cx.createLinearGradient(0, padT, 0, padT + chartH);
+  grd.addColorStop(0, 'rgba(201,168,76,0.12)'); grd.addColorStop(1, 'rgba(201,168,76,0)');
+  cx.beginPath(); cx.moveTo(padL, padT + chartH);
   data.forEach((v, i) => {
-    const x = 40 + (w - 90) * i / (data.length - 1);
-    const y = 40 + (h - 60) * (1 - (v - minV) / range);
-    if (i === 0) cx.moveTo(x, y); else cx.lineTo(x, y);
-  });
-  cx.strokeStyle = '#c9a84c';
-  cx.lineWidth = 1.5;
-  cx.stroke();
-
-  // Principal baseline (flat)
-  cx.beginPath();
-  const baseY = 40 + (h - 60) * (1 - (baseVal - minV) / range);
-  cx.moveTo(40, baseY);
-  cx.lineTo(40 + (w - 90), baseY);
-  cx.strokeStyle = 'rgba(201,168,76,0.2)';
-  cx.lineWidth = 1;
-  cx.setLineDash([4, 4]);
-  cx.stroke();
-  cx.setLineDash([]);
-
-  // Green yield area
-  cx.beginPath();
-  cx.moveTo(40, baseY);
-  data.forEach((v, i) => {
-    const x = 40 + (w - 90) * i / (data.length - 1);
-    const y = 40 + (h - 60) * (1 - (v - minV) / range);
+    const x = padL + chartW * i / (data.length - 1);
+    const y = padT + chartH * (1 - (v - minV) / range);
     cx.lineTo(x, y);
   });
-  cx.lineTo(40 + (w - 90), baseY);
-  cx.closePath();
-  const grd2 = cx.createLinearGradient(0, baseY - 40, 0, baseY);
-  grd2.addColorStop(0, 'rgba(74,222,128,0.08)');
-  grd2.addColorStop(1, 'rgba(74,222,128,0)');
-  cx.fillStyle = grd2;
-  cx.fill();
+  cx.lineTo(padL + chartW, padT + chartH); cx.closePath(); cx.fillStyle = grd; cx.fill();
 
-  // Endpoint dot
-  const lastX = 40 + (w - 90);
-  const lastY = 40 + (h - 60) * (1 - (data[data.length-1] - minV) / range);
+  // ── Main price line ──
   cx.beginPath();
-  cx.arc(lastX, lastY, 4, 0, Math.PI * 2);
-  cx.fillStyle = '#c9a84c';
-  cx.fill();
-  cx.beginPath();
-  cx.arc(lastX, lastY, 7, 0, Math.PI * 2);
-  cx.strokeStyle = 'rgba(201,168,76,0.3)';
-  cx.lineWidth = 1;
-  cx.stroke();
+  data.forEach((v, i) => {
+    const x = padL + chartW * i / (data.length - 1);
+    const y = padT + chartH * (1 - (v - minV) / range);
+    if (i === 0) cx.moveTo(x, y); else cx.lineTo(x, y);
+  });
+  cx.strokeStyle = '#c9a84c'; cx.lineWidth = 1.5; cx.stroke();
 
-  // Update overlay
+  // ── Principal baseline (dashed) ──
+  const baseY = padT + chartH * (1 - (baseVal - minV) / range);
+  cx.beginPath(); cx.moveTo(padL, baseY); cx.lineTo(padL + chartW, baseY);
+  cx.strokeStyle = 'rgba(201,168,76,0.2)'; cx.lineWidth = 1; cx.setLineDash([4, 4]); cx.stroke(); cx.setLineDash([]);
+
+  // ── Green yield area above baseline ──
+  cx.beginPath(); cx.moveTo(padL, baseY);
+  data.forEach((v, i) => {
+    const x = padL + chartW * i / (data.length - 1);
+    const y = padT + chartH * (1 - (v - minV) / range);
+    cx.lineTo(x, y);
+  });
+  cx.lineTo(padL + chartW, baseY); cx.closePath();
+  const g2 = cx.createLinearGradient(0, baseY - 40, 0, baseY);
+  g2.addColorStop(0, 'rgba(74,222,128,0.08)'); g2.addColorStop(1, 'rgba(74,222,128,0)');
+  cx.fillStyle = g2; cx.fill();
+
+  // ── Endpoint dot with glow ──
+  const lastX = padL + chartW;
+  const lastY = padT + chartH * (1 - (data[data.length - 1] - minV) / range);
+  cx.beginPath(); cx.arc(lastX, lastY, 4, 0, Math.PI * 2); cx.fillStyle = '#c9a84c'; cx.fill();
+  cx.beginPath(); cx.arc(lastX, lastY, 7, 0, Math.PI * 2); cx.strokeStyle = 'rgba(201,168,76,0.3)'; cx.lineWidth = 1; cx.stroke();
+
+  // ── Update overlay values ──
   const lastVal = data[data.length - 1];
   const change = ((lastVal - baseVal) / baseVal * 100).toFixed(2);
   document.getElementById('chart-value').textContent = '$' + lastVal.toFixed(2);
   document.getElementById('chart-change').textContent = '+' + change + '%';
   document.getElementById('chart-change').className = 'chart-pair-change up';
+  // Update subtitle with timeframe
+  const tfLabels = {'1D':'Last 24 hours','1W':'Last 7 days','1M':'Last 30 days','3M':'Last 3 months','1Y':'Last 12 months','ALL':'All time'};
+  document.getElementById('chart-sub').textContent = (tfLabels[tf] || 'Yield growth') + ' \u00B7 ' + dates[dates.length-1].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 }
 
 let currentTF = '1M';
@@ -752,6 +796,108 @@ function setChartTF(tf, el) {
 // Initial draw
 setTimeout(() => drawYieldChart('1M'), 100);
 window.addEventListener('resize', () => drawYieldChart(currentTF));
+
+// ── Real-time chart updates ──
+// Append a new data point every 3 seconds based on actual yield rate
+let chartUpdateTimer = null;
+function startRealtimeChart() {
+  if (chartUpdateTimer) clearInterval(chartUpdateTimer);
+  chartUpdateTimer = setInterval(() => {
+    if (!chartState.data.length || !chartState.dates) return;
+    const lastVal = chartState.data[chartState.data.length - 1];
+    // Use YIELD engine rate for consistency with ticker
+    const yieldPer3Sec = YIELD.perSecond * 3;
+    const noise = (Math.random() - 0.5) * yieldPer3Sec * 0.15;
+    const newVal = lastVal + yieldPer3Sec + noise;
+    // Append new point with current timestamp
+    chartState.data.push(newVal);
+    chartState.dates.push(new Date());
+    // Keep max 500 points
+    if (chartState.data.length > 500) { chartState.data.shift(); chartState.dates.shift(); }
+    // Redraw using the full drawYieldChart (preserves date labels)
+    // But we need to prevent it from regenerating data, so we use a flag
+    drawYieldChartFromState();
+  }, 3000);
+}
+
+// Redraw chart from existing chartState (for real-time updates)
+function drawYieldChartFromState() {
+  const c = document.getElementById('yield-chart');
+  if (!c) return;
+  const cx = c.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = c.parentElement.getBoundingClientRect();
+  c.width = rect.width * dpr; c.height = rect.height * dpr;
+  c.style.width = rect.width + 'px'; c.style.height = rect.height + 'px';
+  cx.scale(dpr, dpr);
+  const w = rect.width, h = rect.height;
+  const padL = 40, padR = 90, padT = 40, padB = 40;
+  const chartW = w - padL - padR, chartH = h - padT - padB;
+  const data = chartState.data, dates = chartState.dates, baseVal = chartState.baseVal;
+  const tf = chartState.tf || '1M';
+  chartState.w = w; chartState.h = h; chartState.padL = padL; chartState.padR = padR; chartState.padT = padT; chartState.padB = padB;
+
+  const minV = Math.min(...data) * 0.9999, maxV = Math.max(...data) * 1.0001, range = maxV - minV || 1;
+  chartState.minV = minV; chartState.maxV = maxV; chartState.range = range;
+
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // Grid
+  cx.strokeStyle = 'rgba(201,168,76,0.04)'; cx.lineWidth = 0.5;
+  for (let i = 0; i < 5; i++) { const y = padT + chartH*i/4; cx.beginPath(); cx.moveTo(padL,y); cx.lineTo(w-10,y); cx.stroke(); }
+  // Price labels
+  cx.font = '10px "DM Mono"'; cx.fillStyle = '#374151';
+  for (let i = 0; i < 5; i++) { const val = maxV - range*i/4; cx.fillText('$'+val.toFixed(2), w-80, padT + chartH*i/4 - 4); }
+  // Date labels
+  cx.font = '9px "DM Mono"'; cx.textAlign = 'center';
+  const labelCount = tf === '1D' ? 6 : tf === '1W' ? 7 : tf === '1M' ? 5 : tf === '3M' ? 6 : tf === '1Y' ? 12 : 8;
+  for (let i = 0; i <= labelCount; i++) {
+    const idx = Math.round(i * (dates.length-1) / labelCount);
+    const d = dates[idx]; if (!d) continue;
+    const x = padL + chartW * idx / (data.length-1);
+    const dys = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    let label;
+    if (tf === '1D') label = d.getHours().toString().padStart(2,'0')+':00';
+    else if (tf === '1W') label = dys[d.getDay()]+' '+d.getDate();
+    else if (tf === '1M') label = months[d.getMonth()]+' '+d.getDate();
+    else if (tf === '3M') label = months[d.getMonth()]+' '+d.getDate();
+    else label = months[d.getMonth()]+' \''+d.getFullYear().toString().slice(2);
+    cx.strokeStyle = 'rgba(201,168,76,0.06)'; cx.lineWidth = 0.5;
+    cx.beginPath(); cx.moveTo(x, padT); cx.lineTo(x, padT+chartH); cx.stroke();
+    cx.fillStyle = '#374151'; cx.fillText(label, x, padT+chartH+16);
+  }
+  cx.textAlign = 'start';
+  // Fill gradient
+  const grd = cx.createLinearGradient(0, padT, 0, padT+chartH);
+  grd.addColorStop(0, 'rgba(201,168,76,0.12)'); grd.addColorStop(1, 'rgba(201,168,76,0)');
+  cx.beginPath(); cx.moveTo(padL, padT+chartH);
+  data.forEach((v,i) => cx.lineTo(padL+chartW*i/(data.length-1), padT+chartH*(1-(v-minV)/range)));
+  cx.lineTo(padL+chartW, padT+chartH); cx.closePath(); cx.fillStyle = grd; cx.fill();
+  // Line
+  cx.beginPath();
+  data.forEach((v,i) => { const x=padL+chartW*i/(data.length-1), y=padT+chartH*(1-(v-minV)/range); i===0?cx.moveTo(x,y):cx.lineTo(x,y); });
+  cx.strokeStyle = '#c9a84c'; cx.lineWidth = 1.5; cx.stroke();
+  // Baseline
+  const baseY = padT+chartH*(1-(baseVal-minV)/range);
+  cx.beginPath(); cx.moveTo(padL,baseY); cx.lineTo(padL+chartW,baseY);
+  cx.strokeStyle='rgba(201,168,76,0.2)'; cx.lineWidth=1; cx.setLineDash([4,4]); cx.stroke(); cx.setLineDash([]);
+  // Green yield
+  cx.beginPath(); cx.moveTo(padL,baseY);
+  data.forEach((v,i) => cx.lineTo(padL+chartW*i/(data.length-1), padT+chartH*(1-(v-minV)/range)));
+  cx.lineTo(padL+chartW,baseY); cx.closePath();
+  const g2=cx.createLinearGradient(0,baseY-40,0,baseY); g2.addColorStop(0,'rgba(74,222,128,0.08)'); g2.addColorStop(1,'rgba(74,222,128,0)');
+  cx.fillStyle=g2; cx.fill();
+  // Endpoint
+  const lx=padL+chartW, ly=padT+chartH*(1-(data[data.length-1]-minV)/range);
+  cx.beginPath(); cx.arc(lx,ly,4,0,Math.PI*2); cx.fillStyle='#c9a84c'; cx.fill();
+  cx.beginPath(); cx.arc(lx,ly,7,0,Math.PI*2); cx.strokeStyle='rgba(201,168,76,0.3)'; cx.lineWidth=1; cx.stroke();
+  // Overlay
+  const change=((data[data.length-1]-baseVal)/baseVal*100).toFixed(2);
+  document.getElementById('chart-value').textContent='$'+data[data.length-1].toFixed(2);
+  document.getElementById('chart-change').textContent='+'+change+'%';
+}
+
+startRealtimeChart();
 
 // ── Chart hover crosshair + tooltip ──
 (function() {
@@ -828,9 +974,37 @@ window.addEventListener('resize', () => drawYieldChart(currentTF));
     const tipY = Math.max(8, Math.min(dataY - 40, s.h - 80));
     tooltip.style.left = (tipX + 160 > s.w ? dataX - 160 : tipX) + 'px';
     tooltip.style.top = tipY + 'px';
-    tooltip.innerHTML = '<div style="font-size:9px;color:#5a5650;letter-spacing:.08em;margin-bottom:6px">POINT ' + idx + ' / ' + (s.data.length-1) + '</div>' +
+    // Format date + period label for tooltip based on timeframe
+    let dateLabel = '', periodLabel = '';
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    if (s.dates && s.dates[idx]) {
+      const d = s.dates[idx];
+      if (s.tf === '1D') {
+        dateLabel = d.getHours().toString().padStart(2,'0') + ':00 \u00B7 ' + months[d.getMonth()] + ' ' + d.getDate();
+        periodLabel = 'HOURLY';
+      } else if (s.tf === '1W') {
+        dateLabel = days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+        periodLabel = 'DAILY';
+      } else if (s.tf === '1M') {
+        dateLabel = months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+        periodLabel = 'DAILY';
+      } else if (s.tf === '3M') {
+        dateLabel = 'Week of ' + months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+        periodLabel = 'WEEKLY';
+      } else {
+        dateLabel = months[d.getMonth()] + ' ' + d.getFullYear();
+        periodLabel = 'MONTHLY';
+      }
+    }
+    // Calculate period yield (yield earned in this specific period unit)
+    const prevVal = idx > 0 ? s.data[idx - 1] : s.baseVal;
+    const periodYield = val - prevVal;
+    tooltip.innerHTML = '<div style="font-size:8px;color:#5a5650;letter-spacing:.1em;margin-bottom:2px">' + periodLabel + '</div>' +
+      '<div style="font-size:9px;color:#6b7280;margin-bottom:6px">' + dateLabel + '</div>' +
       '<div style="font-size:16px;color:#f0ece4;font-weight:500;margin-bottom:4px">$' + val.toFixed(2) + '</div>' +
-      '<div style="font-size:11px;color:#4ade80;margin-bottom:2px">Yield: +$' + yieldEarned.toFixed(2) + '</div>' +
+      '<div style="font-size:11px;color:#4ade80;margin-bottom:2px">Period yield: +$' + periodYield.toFixed(2) + '</div>' +
+      '<div style="font-size:11px;color:#4ade80;margin-bottom:2px">Total yield: +$' + yieldEarned.toFixed(2) + '</div>' +
       '<div style="font-size:11px;color:' + (pctChange >= 0 ? '#4ade80' : '#f87171') + '">Change: ' + (pctChange >= 0 ? '+' : '') + pctChange.toFixed(4) + '%</div>';
 
     // Update the main overlay too
@@ -851,19 +1025,47 @@ window.addEventListener('resize', () => drawYieldChart(currentTF));
   });
 })();
 
-// ── Live yield ticker ──
-let yieldAccum = 0;
-const principal = 10000;
-const apy = 0.038;
-const perSecond = principal * apy / (365.25 * 86400);
+// ── Unified Yield Engine ──
+// Single source of truth for all yield calculations: ticker, chart, stats
+const YIELD = {
+  principal: 10000,
+  apy: 0.038,
+  startTime: Date.now(), // simulated lock start
+  accum: 0,              // total accumulated since page load
+  todayStart: 0,         // reset daily
+  get perSecond() { return this.principal * this.apy / (365.25 * 86400); },
+  get perDay() { return this.principal * this.apy / 365.25; },
+  get perMonth() { return this.principal * this.apy / 12; },
+  get perYear() { return this.principal * this.apy; },
+};
+
 let lastTick = performance.now();
 
 function tickYield(now) {
   const dt = (now - lastTick) / 1000;
   lastTick = now;
-  yieldAccum += perSecond * dt;
+  YIELD.accum += YIELD.perSecond * dt;
+
+  // Update yield ticker
   const el = document.getElementById('yield-ticker');
-  if (el) el.innerHTML = '+' + yieldAccum.toFixed(8) + ' <span style="font-size:14px;color:#5a5650">USDX</span>';
+  if (el) el.innerHTML = '+' + YIELD.accum.toFixed(8) + ' <span style="font-size:14px;color:#5a5650">USDX</span>';
+
+  // Update per-second/per-day rates
+  const rateEl = document.getElementById('yield-per-sec');
+  if (rateEl) rateEl.textContent = '$' + YIELD.perSecond.toFixed(8);
+  const dayEl = document.getElementById('yield-per-day');
+  if (dayEl) dayEl.textContent = '$' + YIELD.perDay.toFixed(2);
+
+  // Update today/month/total stats (every ~500ms to avoid DOM thrashing)
+  if (Math.random() < 0.03) {
+    const todayEl = document.getElementById('yield-today');
+    const monthEl = document.getElementById('yield-month');
+    const totalEl = document.getElementById('yield-total');
+    if (todayEl) todayEl.textContent = '+$' + YIELD.accum.toFixed(2);
+    if (monthEl) monthEl.textContent = '+$' + (YIELD.accum * 30).toFixed(2);
+    if (totalEl) totalEl.textContent = '+$' + YIELD.accum.toFixed(2);
+  }
+
   requestAnimationFrame(tickYield);
 }
 requestAnimationFrame(tickYield);
@@ -1023,19 +1225,49 @@ function showNotif(msg, type) {
   setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 3000);
 }
 
+// Detect environment
+const _isElectron = /Electron/i.test(navigator.userAgent);
+const _isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const _isMetaMaskBrowser = !!(window.ethereum && window.ethereum.isMetaMask);
+
 async function connectWallet() {
   const btn = document.getElementById('wallet-btn');
+
+  // ── ELECTRON DESKTOP APP ──
+  // MetaMask cannot inject into Electron. Open the user's system browser
+  // where MetaMask extension is installed — they connect there.
+  if (_isElectron && !window.ethereum) {
+    btn.innerHTML = '<span style="font-size:13px">&#x21D7;</span> <span>OPENING BROWSER...</span>';
+    showNotif('Opening your browser to connect MetaMask...', 'ok');
+    if (window.__nexvaultDesktop && window.__nexvaultDesktop.openInBrowser) {
+      window.__nexvaultDesktop.openInBrowser('https://nexvault.one/app');
+    } else {
+      window.open('https://nexvault.one/app', '_blank');
+    }
+    setTimeout(() => {
+      btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
+    }, 3000);
+    return;
+  }
+
+  // ── MOBILE WITHOUT METAMASK ──
+  // Redirect to MetaMask app's in-app browser
+  if (_isMobile && !window.ethereum) {
+    btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>OPEN METAMASK</span>';
+    showNotif('Opening MetaMask app...', 'ok');
+    window.location.href = 'https://metamask.app.link/dapp/nexvault.one/app';
+    return;
+  }
+
+  // ── BROWSER / METAMASK APP BROWSER ──
   btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">&#x25CC;</span> <span>CONNECTING...</span>';
 
   const provider = await waitForMetaMask();
 
   if (!provider) {
     btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
-    // Show install prompt
-    const mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
-    const url = mobile ? 'https://metamask.app.link/dapp/nexvault.one/app' : 'https://metamask.io/download';
-    showNotif(mobile ? 'Open in MetaMask app browser' : 'Install MetaMask extension first', 'err');
-    window.open(url, '_blank');
+    showNotif('MetaMask not found — install the extension first', 'err');
+    window.open('https://metamask.io/download', '_blank');
     return;
   }
 

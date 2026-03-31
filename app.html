@@ -1487,38 +1487,92 @@ async function connectViaQR() {
   const walletModal = document.getElementById('nv-wallet-modal');
   if (walletModal) walletModal.remove();
 
-  // The MetaMask deep link — when scanned, opens NexVault inside MetaMask's browser
-  const deepLink = 'https://metamask.app.link/dapp/nexvault.one/app';
+  const btn = document.getElementById('wallet-btn');
+  btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">&#x25CC;</span> <span>LOADING QR...</span>';
 
-  // Generate QR code as SVG using a lightweight inline generator
   function generateQR(text, size) {
-    // Use the QR code API for simplicity and reliability
-    return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text)}&bgcolor=0a0c12&color=c9a84c&format=svg`;
+    return 'https://api.qrserver.com/v1/create-qr-code/?size=' + size + 'x' + size + '&data=' + encodeURIComponent(text) + '&bgcolor=ffffff&color=000000&format=png';
   }
 
-  // Show QR modal
-  const qrModal = document.createElement('div');
-  qrModal.id = 'nv-qr-modal';
-  qrModal.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.88);backdrop-filter:blur(14px)';
-  qrModal.innerHTML = `
-    <div style="background:#0a0c12;border:1px solid rgba(201,168,76,.2);border-radius:20px;padding:32px;width:380px;max-width:92vw;text-align:center;position:relative">
-      <button onclick="document.getElementById('nv-qr-modal').remove()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:#6b7280;font-size:20px;cursor:pointer;line-height:1">&#x2715;</button>
-      <div style="width:48px;height:48px;border-radius:12px;background:#05060a;border:1.5px solid rgba(201,168,76,.3);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-family:'Playfair Display',serif;font-size:22px;color:#c9a84c;font-weight:700">V</div>
-      <div style="font-family:'Playfair Display',serif;font-size:18px;color:#f0ece4;margin-bottom:6px">Scan with MetaMask</div>
-      <div style="font-size:11px;color:#6b7280;margin-bottom:20px;line-height:1.6">Open your phone camera or MetaMask app and scan this QR code to connect</div>
-      <div style="background:#fff;border-radius:16px;padding:16px;display:inline-block;margin-bottom:20px">
-        <img src="${generateQR(deepLink, 220)}" alt="QR Code" width="220" height="220" style="display:block;border-radius:8px" />
-      </div>
-      <div style="font-size:10px;color:#374151;line-height:1.6;margin-bottom:14px">
-        This opens NexVault inside MetaMask's in-app browser where your wallet connects automatically.
-      </div>
-      <div style="display:flex;gap:8px">
-        <button onclick="navigator.clipboard.writeText('${deepLink}');this.textContent='COPIED!';setTimeout(()=>this.textContent='COPY LINK',1500)" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(201,168,76,.2);background:rgba(201,168,76,.06);color:#c9a84c;font-size:10px;font-weight:600;letter-spacing:.06em;cursor:pointer;font-family:'DM Mono',monospace">COPY LINK</button>
-        <button onclick="document.getElementById('nv-qr-modal').remove();connectViaExtension()" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#9ca3af;font-size:10px;font-weight:600;letter-spacing:.06em;cursor:pointer;font-family:'DM Mono',monospace">USE EXTENSION</button>
-      </div>
-    </div>`;
-  document.body.appendChild(qrModal);
-  qrModal.addEventListener('click', e => { if (e.target === qrModal) qrModal.remove(); });
+  try {
+    // Dynamically load WalletConnect EthereumProvider
+    const wcModule = await import('https://esm.sh/@walletconnect/ethereum-provider@2.17.0');
+    const EthereumProvider = wcModule.EthereumProvider || wcModule.default;
+
+    const wcProvider = await EthereumProvider.init({
+      projectId: '44a4b0d66bd62948f4ca92a7d6b3c7d2',
+      chains: [1],
+      showQrModal: false, // We show our own styled QR modal
+      optionalChains: [1],
+      metadata: {
+        name: 'NexVault',
+        description: 'USDX Savings Vault on Nexus Blockchain',
+        url: 'https://nexvault.one',
+        icons: ['https://nexvault.one/icon-192.png']
+      }
+    });
+
+    // Get the WalletConnect URI for QR code
+    let wcUri = '';
+    wcProvider.on('display_uri', (uri) => {
+      wcUri = uri;
+
+      // Show QR modal with WalletConnect URI
+      const existing = document.getElementById('nv-qr-modal');
+      if (existing) existing.remove();
+
+      const qrModal = document.createElement('div');
+      qrModal.id = 'nv-qr-modal';
+      qrModal.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.88);backdrop-filter:blur(14px)';
+      qrModal.innerHTML = '<div style="background:#0a0c12;border:1px solid rgba(201,168,76,.2);border-radius:20px;padding:32px;width:400px;max-width:92vw;text-align:center;position:relative">' +
+        '<button onclick="document.getElementById(\'nv-qr-modal\').remove()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:#6b7280;font-size:20px;cursor:pointer;line-height:1">&#x2715;</button>' +
+        '<div style="width:48px;height:48px;border-radius:12px;background:#05060a;border:1.5px solid rgba(201,168,76,.3);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-family:\'Playfair Display\',serif;font-size:22px;color:#c9a84c;font-weight:700">V</div>' +
+        '<div style="font-family:\'Playfair Display\',serif;font-size:18px;color:#f0ece4;margin-bottom:6px">Scan with MetaMask</div>' +
+        '<div style="font-size:11px;color:#6b7280;margin-bottom:20px;line-height:1.6">Open MetaMask on your phone, tap the scan icon, and scan this QR code. Your wallet will connect to this dashboard.</div>' +
+        '<div style="background:#fff;border-radius:16px;padding:16px;display:inline-block;margin-bottom:16px"><img src="' + generateQR(uri, 240) + '" alt="QR Code" width="240" height="240" style="display:block;border-radius:8px"/></div>' +
+        '<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:14px"><div style="width:6px;height:6px;border-radius:50%;background:#fbbf24;animation:pulse 1.5s infinite"></div><span style="font-size:11px;color:#c9a84c;font-weight:500">Waiting for connection...</span></div>' +
+        '<div style="font-size:9px;color:#374151;line-height:1.5">In MetaMask mobile: tap the scan icon (top right) to scan this QR code. Your wallet connects directly to this browser session.</div>' +
+        '</div>';
+      document.body.appendChild(qrModal);
+      qrModal.addEventListener('click', e => { if (e.target === qrModal) qrModal.remove(); });
+
+      btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>SCAN QR CODE</span>';
+    });
+
+    // Connect — this triggers display_uri event above, then waits for phone to scan
+    await wcProvider.enable();
+
+    // Connection successful — phone scanned and approved
+    const qrModal = document.getElementById('nv-qr-modal');
+    if (qrModal) qrModal.remove();
+
+    const accounts = wcProvider.accounts;
+    if (accounts && accounts.length > 0) {
+      window._wcProvider = wcProvider;
+      window._activeProvider = wcProvider;
+
+      // Listen for disconnect
+      wcProvider.on('disconnect', () => disconnectWallet());
+      wcProvider.on('accountsChanged', (accts) => {
+        if (!accts.length) disconnectWallet();
+        else window.location.reload();
+      });
+
+      await finalizeConnection(wcProvider, accounts[0]);
+      showNotif('Wallet connected via QR code', 'ok');
+    }
+
+  } catch (err) {
+    const qrModal = document.getElementById('nv-qr-modal');
+    if (qrModal) qrModal.remove();
+    btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
+    if (err.message && (err.message.includes('rejected') || err.message.includes('User'))) {
+      showNotif('Connection cancelled', 'err');
+    } else {
+      console.error('WalletConnect error:', err);
+      showNotif('QR connection failed — try MetaMask extension', 'err');
+    }
+  }
 }
 
 // ── Finalize connection (shared by extension + QR) ──

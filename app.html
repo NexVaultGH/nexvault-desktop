@@ -1362,6 +1362,20 @@ async function checkGenesisBadge(walletAddress, provider) {
 //  METAMASK WALLET CONNECTION
 // ══════════════════════════════════════════════════════
 
+// ── Listen for MetaMask account injection globally ──
+// This catches the case where MetaMask approves but finalizeConnection hasn't run yet
+if (window.ethereum) {
+  try {
+    window.ethereum.on('accountsChanged', (accounts) => {
+      if (accounts && accounts.length > 0 && !yieldRunning) {
+        // MetaMask just connected but dashboard isn't showing yet — auto-finalize
+        console.log('[NexVault] MetaMask accountsChanged detected, auto-finalizing...');
+        finalizeConnection(window.ethereum, accounts[0]);
+      }
+    });
+  } catch(e) {}
+}
+
 // EIP-6963 provider store
 const _eip6963Providers = {};
 window.addEventListener('eip6963:announceProvider', (event) => {
@@ -1691,6 +1705,7 @@ async function finalizeConnection(provider, addressOverride) {
     } catch(e) {}
 
   } catch (err) {
+    console.error('[NexVault] finalizeConnection error:', err);
     btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
     if (err.code === 4001 || (err.message && err.message.includes('rejected'))) showNotif('Connection cancelled', 'err');
     else showNotif('Connection failed — try again', 'err');

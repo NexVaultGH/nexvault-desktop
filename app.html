@@ -269,8 +269,33 @@
   </style>
   <!-- ethers.js v6 -->
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
-  <!-- WalletConnect / Web3Modal for QR code scanning -->
-  <script src="https://unpkg.com/@walletconnect/ethereum-provider@2.13.0/dist/index.umd.js" defer></script>
+  <!-- Web3Modal + WalletConnect for QR code wallet connection -->
+  <script type="module">
+    import { createWeb3Modal, defaultConfig } from 'https://cdn.jsdelivr.net/npm/@web3modal/ethers@5.1.11/+esm';
+
+    const projectId = 'b3d6c50ab8284acb97c327b1e0d0a3e4';
+    const metadata = {
+      name: 'NexVault',
+      description: 'USDX Savings Vault on Nexus Blockchain',
+      url: 'https://nexvault.one',
+      icons: ['https://nexvault.one/icon-192.png']
+    };
+    const ethersConfig = defaultConfig({ metadata });
+    const nexusChain = { chainId: 1, name: 'Ethereum', currency: 'ETH', explorerUrl: 'https://etherscan.io', rpcUrl: 'https://eth.llamarpc.com' };
+
+    try {
+      window._web3modal = createWeb3Modal({
+        ethersConfig,
+        chains: [nexusChain],
+        projectId,
+        themeMode: 'dark',
+        themeVariables: { '--w3m-accent': '#c9a84c', '--w3m-border-radius-master': '2px' }
+      });
+      console.log('[NexVault] Web3Modal initialized');
+    } catch(e) {
+      console.warn('[NexVault] Web3Modal init error:', e.message);
+    }
+  </script>
 </head>
 <body>
 
@@ -1445,68 +1470,57 @@ async function connectViaExtension() {
   await finalizeConnection(provider);
 }
 
-// ── Connect via QR Code (WalletConnect) ──
+// ── Connect via QR Code (Web3Modal / WalletConnect) ──
 async function connectViaQR() {
   const modal = document.getElementById('nv-wallet-modal');
   if (modal) modal.remove();
 
   const btn = document.getElementById('wallet-btn');
-  btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">&#x25CC;</span> <span>GENERATING QR...</span>';
+
+  if (!window._web3modal) {
+    btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
+    showNotif('QR scanner loading — please try again in a few seconds', 'err');
+    return;
+  }
 
   try {
-    // WalletConnect project ID — free tier from cloud.walletconnect.com
-    const projectId = 'b3d6c50ab8284acb97c327b1e0d0a3e4';
+    // Open the Web3Modal — it handles QR code, wallets list, deep links
+    await window._web3modal.open();
 
-    // Check if WalletConnect provider is available
-    if (typeof window.EthereumProvider === 'undefined' && typeof globalThis.EthereumProvider === 'undefined') {
-      // Try dynamic import as fallback
-      showNotif('Loading QR scanner...', 'ok');
-      const mod = await import('https://unpkg.com/@walletconnect/ethereum-provider@2.13.0/dist/index.es.js');
-      window.EthereumProvider = mod.EthereumProvider || mod.default;
-    }
+    // Wait for connection — Web3Modal resolves when user connects
+    btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">&#x25CC;</span> <span>SCAN QR CODE...</span>';
 
-    const EthProvider = window.EthereumProvider || globalThis.EthereumProvider;
-
-    const wcProvider = await EthProvider.init({
-      projectId: projectId,
-      chains: [1],  // Ethereum mainnet (will switch to Nexus on mainnet)
-      showQrModal: true,
-      qrModalOptions: {
-        themeMode: 'dark',
-        themeVariables: {
-          '--wcm-z-index': '999999',
-          '--wcm-accent-color': '#c9a84c',
-          '--wcm-background-color': '#0a0c12',
+    // Poll for connection (Web3Modal doesn't have a clean promise API)
+    let attempts = 0;
+    const checkConnection = setInterval(async () => {
+      attempts++;
+      try {
+        const provider = window._web3modal.getWalletProvider();
+        if (provider) {
+          clearInterval(checkConnection);
+          const ethersProvider = new ethers.BrowserProvider(provider);
+          const signer = await ethersProvider.getSigner();
+          const address = await signer.getAddress();
+          window._wcProvider = provider;
+          await finalizeConnection(provider, address);
+        } else if (attempts > 120) { // 60 seconds timeout
+          clearInterval(checkConnection);
+          btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
+        }
+      } catch(e) {
+        if (attempts > 120) {
+          clearInterval(checkConnection);
+          btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
         }
       }
-    });
-
-    await wcProvider.enable();
-
-    // Create ethers provider from WalletConnect
-    const ethersProvider = new ethers.BrowserProvider(wcProvider);
-    const signer = await ethersProvider.getSigner();
-    const address = await signer.getAddress();
-
-    // Store WC provider for later use
-    window._activeProvider = wcProvider;
-    window._wcProvider = wcProvider;
-
-    // Handle disconnect
-    wcProvider.on('disconnect', () => { disconnectWallet(); });
-    wcProvider.on('accountsChanged', (accounts) => {
-      if (!accounts.length) disconnectWallet();
-      else window.location.reload();
-    });
-
-    await finalizeConnection(wcProvider, address);
+    }, 500);
 
   } catch (err) {
     btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
-    if (err.message && err.message.includes('User rejected')) {
+    if (err.message && err.message.includes('rejected')) {
       showNotif('Connection cancelled', 'err');
     } else {
-      console.error('WalletConnect error:', err);
+      console.error('Web3Modal error:', err);
       showNotif('QR connection failed — try extension instead', 'err');
     }
   }

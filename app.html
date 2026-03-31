@@ -7,6 +7,12 @@
   <meta name="robots" content="noindex,nofollow"/>
   <link rel="icon" href="/favicon.ico" sizes="any"/>
   <meta name="theme-color" content="#05060a"/>
+  <link rel="manifest" href="/mobile-manifest.json"/>
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="NexVault"/>
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,300;0,400;0,600;1,400&family=DM+Mono:wght@300;400;500&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -263,6 +269,9 @@
     .f-link{font-size:9px;color:var(--dim);text-decoration:none;letter-spacing:.06em;transition:color .2s;font-weight:500}
     .f-link:hover{color:var(--gold)}
 
+
+    .hide-mobile{}
+    @media(max-width:768px){.hide-mobile{display:none!important}}
     /* ── Responsive ── */
     @media(max-width:960px){.grid{grid-template-columns:1fr}.stats-row{grid-template-columns:repeat(3,1fr)}.top-nav{display:none}}
     @media(max-width:600px){.stats-row{grid-template-columns:1fr 1fr}.tier-selector{flex-direction:column}.chart-body{height:220px}.pos-row{grid-template-columns:60px 1fr 1fr 80px;font-size:11px}.pos-row>:nth-child(5){display:none}.top{padding:0 12px}.dash{padding:12px 10px 40px}}
@@ -1374,11 +1383,11 @@ const _isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 // ── Wallet Connection Modal ──
 function showWalletModal() {
-  // Remove any existing modal
   const existing = document.getElementById('nv-wallet-modal');
   if (existing) existing.remove();
-
   const hasExtension = !!(window.ethereum);
+  // Mobile with MetaMask injected: connect directly
+  if (_isMobile && hasExtension) { connectViaExtension(); return; }
 
   const modal = document.createElement('div');
   modal.id = 'nv-wallet-modal';
@@ -1392,7 +1401,7 @@ function showWalletModal() {
         <div style="font-size:11px;color:#6b7280">Choose how to connect to NexVault</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px">
-        ${hasExtension ? `
+        ${hasExtension && !_isMobile ? `
         <button onclick="connectViaExtension()" style="width:100%;padding:16px;border-radius:12px;border:1px solid rgba(201,168,76,.2);background:rgba(201,168,76,.06);color:#f0ece4;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .2s;font-family:'DM Mono',monospace" onmouseover="this.style.background='rgba(201,168,76,.12)'" onmouseout="this.style.background='rgba(201,168,76,.06)'">
           <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#f6851b,#e2761b);display:flex;align-items:center;justify-content:center;flex-shrink:0">
             <span style="font-size:20px">&#x1F98A;</span>
@@ -1402,6 +1411,7 @@ function showWalletModal() {
             <div style="font-size:10px;color:#6b7280;margin-top:2px">Connect via browser extension</div>
           </div>
         </button>` : ''}
+        ${_isMobile ? '<button onclick="window.location.href=\'https://metamask.app.link/dapp/nexvault.one\'" style="width:100%;padding:16px;border-radius:12px;border:1px solid rgba(201,168,76,.2);background:rgba(201,168,76,.06);color:#f0ece4;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .2s;font-family:\'DM Mono\',monospace"><div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#f6851b,#e2761b);display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:20px">&#x1F98A;</span></div><div style="text-align:left"><div style="font-size:13px;font-weight:600">Open in MetaMask App</div><div style="font-size:10px;color:#6b7280;margin-top:2px">Opens NexVault inside MetaMask</div></div></button>' : ''}
         <button onclick="connectViaQR()" style="width:100%;padding:16px;border-radius:12px;border:1px solid rgba(96,165,250,.2);background:rgba(96,165,250,.06);color:#f0ece4;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .2s;font-family:'DM Mono',monospace" onmouseover="this.style.background='rgba(96,165,250,.12)'" onmouseout="this.style.background='rgba(96,165,250,.06)'">
           <div style="width:40px;height:40px;border-radius:10px;background:rgba(96,165,250,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
             <span style="font-size:18px">&#x1F4F1;</span>
@@ -1411,16 +1421,7 @@ function showWalletModal() {
             <div style="font-size:10px;color:#6b7280;margin-top:2px">Connect via MetaMask mobile app</div>
           </div>
         </button>
-        ${_isMobile && !window.ethereum ? `
-        <button onclick="window.location.href='https://metamask.app.link/dapp/nexvault.one/app'" style="width:100%;padding:16px;border-radius:12px;border:1px solid rgba(74,222,128,.2);background:rgba(74,222,128,.06);color:#f0ece4;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .2s;font-family:'DM Mono',monospace" onmouseover="this.style.background='rgba(74,222,128,.12)'" onmouseout="this.style.background='rgba(74,222,128,.06)'">
-          <div style="width:40px;height:40px;border-radius:10px;background:rgba(74,222,128,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-            <span style="font-size:18px">&#x1F310;</span>
-          </div>
-          <div style="text-align:left">
-            <div style="font-size:13px;font-weight:600">Open in MetaMask</div>
-            <div style="font-size:10px;color:#6b7280;margin-top:2px">Open NexVault in MetaMask app</div>
-          </div>
-        </button>` : ''}
+
         ${_isElectron && !window.ethereum ? `
         <button onclick="if(window.__nexvaultDesktop)window.__nexvaultDesktop.openInBrowser('https://nexvault.one/app');else window.open('https://nexvault.one/app','_blank');document.getElementById('nv-wallet-modal').remove()" style="width:100%;padding:16px;border-radius:12px;border:1px solid rgba(74,222,128,.2);background:rgba(74,222,128,.06);color:#f0ece4;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .2s;font-family:'DM Mono',monospace" onmouseover="this.style.background='rgba(74,222,128,.12)'" onmouseout="this.style.background='rgba(74,222,128,.06)'">
           <div style="width:40px;height:40px;border-radius:10px;background:rgba(74,222,128,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -1534,6 +1535,23 @@ async function finalizeConnection(provider, addressOverride) {
 
     // Save for auto-reconnect
     localStorage.setItem('nexvault_wallet', address);
+
+    // FIX 4: Read on-chain deposit data to set correct yield start time
+    // When contracts are deployed, this reads the actual deposit timestamp
+    // For now with simulated data, use localStorage to persist across sessions
+    const savedStart = localStorage.getItem('nexvault_yield_start_' + address.toLowerCase());
+    if (savedStart) {
+      YIELD.startTime = parseInt(savedStart);
+    } else {
+      // First connection for this wallet — set start time to now
+      YIELD.startTime = Date.now();
+      localStorage.setItem('nexvault_yield_start_' + address.toLowerCase(), YIELD.startTime.toString());
+    }
+    // Recalculate accumulated yield from start time
+    const elapsedSec = (Date.now() - YIELD.startTime) / 1000;
+    YIELD.accum = YIELD.perSecond * elapsedSec;
+    // Redraw chart with correct start time
+    if (typeof drawYieldChart === 'function') drawYieldChart(currentTF || '1M');
 
     // Check genesis badge
     if (typeof checkGenesisBadge === 'function') {

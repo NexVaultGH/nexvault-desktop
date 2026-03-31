@@ -269,6 +269,8 @@
   </style>
   <!-- ethers.js v6 -->
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
+  <!-- WalletConnect / Web3Modal for QR code scanning -->
+  <script src="https://unpkg.com/@walletconnect/ethereum-provider@2.13.0/dist/index.umd.js" defer></script>
 </head>
 <body>
 
@@ -1353,107 +1355,238 @@ function showNotif(msg, type) {
 // Detect environment
 const _isElectron = /Electron/i.test(navigator.userAgent);
 const _isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-const _isMetaMaskBrowser = !!(window.ethereum && window.ethereum.isMetaMask);
 
-async function connectWallet() {
+// ── Wallet Connection Modal ──
+function showWalletModal() {
+  // Remove any existing modal
+  const existing = document.getElementById('nv-wallet-modal');
+  if (existing) existing.remove();
+
+  const hasExtension = !!(window.ethereum);
+
+  const modal = document.createElement('div');
+  modal.id = 'nv-wallet-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);backdrop-filter:blur(14px)';
+  modal.innerHTML = `
+    <div style="background:#0a0c12;border:1px solid rgba(201,168,76,.2);border-radius:20px;padding:32px 28px;width:380px;max-width:92vw;position:relative">
+      <button onclick="document.getElementById('nv-wallet-modal').remove()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:#6b7280;font-size:20px;cursor:pointer;line-height:1">&#x2715;</button>
+      <div style="text-align:center;margin-bottom:24px">
+        <div style="width:48px;height:48px;border-radius:12px;background:#05060a;border:1.5px solid rgba(201,168,76,.3);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-family:'Playfair Display',serif;font-size:22px;color:#c9a84c;font-weight:700">V</div>
+        <div style="font-family:'Playfair Display',serif;font-size:20px;color:#f0ece4;margin-bottom:4px">Connect Wallet</div>
+        <div style="font-size:11px;color:#6b7280">Choose how to connect to NexVault</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${hasExtension ? `
+        <button onclick="connectViaExtension()" style="width:100%;padding:16px;border-radius:12px;border:1px solid rgba(201,168,76,.2);background:rgba(201,168,76,.06);color:#f0ece4;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .2s;font-family:'DM Mono',monospace" onmouseover="this.style.background='rgba(201,168,76,.12)'" onmouseout="this.style.background='rgba(201,168,76,.06)'">
+          <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#f6851b,#e2761b);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <span style="font-size:20px">&#x1F98A;</span>
+          </div>
+          <div style="text-align:left">
+            <div style="font-size:13px;font-weight:600">MetaMask Extension</div>
+            <div style="font-size:10px;color:#6b7280;margin-top:2px">Connect via browser extension</div>
+          </div>
+        </button>` : ''}
+        <button onclick="connectViaQR()" style="width:100%;padding:16px;border-radius:12px;border:1px solid rgba(96,165,250,.2);background:rgba(96,165,250,.06);color:#f0ece4;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .2s;font-family:'DM Mono',monospace" onmouseover="this.style.background='rgba(96,165,250,.12)'" onmouseout="this.style.background='rgba(96,165,250,.06)'">
+          <div style="width:40px;height:40px;border-radius:10px;background:rgba(96,165,250,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <span style="font-size:18px">&#x1F4F1;</span>
+          </div>
+          <div style="text-align:left">
+            <div style="font-size:13px;font-weight:600">Scan QR Code</div>
+            <div style="font-size:10px;color:#6b7280;margin-top:2px">Connect via MetaMask mobile app</div>
+          </div>
+        </button>
+        ${_isMobile && !window.ethereum ? `
+        <button onclick="window.location.href='https://metamask.app.link/dapp/nexvault.one/app'" style="width:100%;padding:16px;border-radius:12px;border:1px solid rgba(74,222,128,.2);background:rgba(74,222,128,.06);color:#f0ece4;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .2s;font-family:'DM Mono',monospace" onmouseover="this.style.background='rgba(74,222,128,.12)'" onmouseout="this.style.background='rgba(74,222,128,.06)'">
+          <div style="width:40px;height:40px;border-radius:10px;background:rgba(74,222,128,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <span style="font-size:18px">&#x1F310;</span>
+          </div>
+          <div style="text-align:left">
+            <div style="font-size:13px;font-weight:600">Open in MetaMask</div>
+            <div style="font-size:10px;color:#6b7280;margin-top:2px">Open NexVault in MetaMask app</div>
+          </div>
+        </button>` : ''}
+        ${_isElectron && !window.ethereum ? `
+        <button onclick="if(window.__nexvaultDesktop)window.__nexvaultDesktop.openInBrowser('https://nexvault.one/app');else window.open('https://nexvault.one/app','_blank');document.getElementById('nv-wallet-modal').remove()" style="width:100%;padding:16px;border-radius:12px;border:1px solid rgba(74,222,128,.2);background:rgba(74,222,128,.06);color:#f0ece4;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all .2s;font-family:'DM Mono',monospace" onmouseover="this.style.background='rgba(74,222,128,.12)'" onmouseout="this.style.background='rgba(74,222,128,.06)'">
+          <div style="width:40px;height:40px;border-radius:10px;background:rgba(74,222,128,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <span style="font-size:18px">&#x1F5A5;</span>
+          </div>
+          <div style="text-align:left">
+            <div style="font-size:13px;font-weight:600">Open in Browser</div>
+            <div style="font-size:10px;color:#6b7280;margin-top:2px">Connect via your system browser</div>
+          </div>
+        </button>` : ''}
+      </div>
+      <div style="text-align:center;margin-top:16px;font-size:10px;color:#374151">
+        By connecting you agree to the <a href="/terms" style="color:#c9a84c;text-decoration:none">Terms of Service</a>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+// ── Connect via MetaMask Extension ──
+async function connectViaExtension() {
+  const modal = document.getElementById('nv-wallet-modal');
+  if (modal) modal.remove();
+
   const btn = document.getElementById('wallet-btn');
-
-  // ── ELECTRON DESKTOP APP ──
-  // MetaMask cannot inject into Electron. Open the user's system browser
-  // where MetaMask extension is installed — they connect there.
-  if (_isElectron && !window.ethereum) {
-    btn.innerHTML = '<span style="font-size:13px">&#x21D7;</span> <span>OPENING BROWSER...</span>';
-    showNotif('Opening your browser to connect MetaMask...', 'ok');
-    if (window.__nexvaultDesktop && window.__nexvaultDesktop.openInBrowser) {
-      window.__nexvaultDesktop.openInBrowser('https://nexvault.one/app');
-    } else {
-      window.open('https://nexvault.one/app', '_blank');
-    }
-    setTimeout(() => {
-      btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
-    }, 3000);
-    return;
-  }
-
-  // ── MOBILE WITHOUT METAMASK ──
-  // Redirect to MetaMask app's in-app browser
-  if (_isMobile && !window.ethereum) {
-    btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>OPEN METAMASK</span>';
-    showNotif('Opening MetaMask app...', 'ok');
-    window.location.href = 'https://metamask.app.link/dapp/nexvault.one/app';
-    return;
-  }
-
-  // ── BROWSER / METAMASK APP BROWSER ──
   btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">&#x25CC;</span> <span>CONNECTING...</span>';
 
   const provider = await waitForMetaMask();
-
   if (!provider) {
     btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
-    showNotif('MetaMask not found — install the extension first', 'err');
-    window.open('https://metamask.io/download', '_blank');
+    showNotif('MetaMask extension not detected', 'err');
     return;
   }
+  await finalizeConnection(provider);
+}
+
+// ── Connect via QR Code (WalletConnect) ──
+async function connectViaQR() {
+  const modal = document.getElementById('nv-wallet-modal');
+  if (modal) modal.remove();
+
+  const btn = document.getElementById('wallet-btn');
+  btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">&#x25CC;</span> <span>GENERATING QR...</span>';
 
   try {
-    const accounts = await provider.request({ method: 'eth_requestAccounts' });
-    if (accounts && accounts.length > 0) {
-      window._activeProvider = provider;
-      const address = accounts[0];
-      const short = address.slice(0,6) + '...' + address.slice(-4);
+    // WalletConnect project ID — free tier from cloud.walletconnect.com
+    const projectId = 'b3d6c50ab8284acb97c327b1e0d0a3e4';
 
-      // Update UI
-      btn.innerHTML = '<div style="width:7px;height:7px;border-radius:50%;background:#4ade80"></div> <span>' + short + '</span>';
-      btn.style.borderColor = 'rgba(96,165,250,.3)';
-      btn.style.background = 'rgba(96,165,250,.07)';
-      btn.style.color = '#60a5fa';
-      btn.onclick = function() { disconnectWallet(); };
+    // Check if WalletConnect provider is available
+    if (typeof window.EthereumProvider === 'undefined' && typeof globalThis.EthereumProvider === 'undefined') {
+      // Try dynamic import as fallback
+      showNotif('Loading QR scanner...', 'ok');
+      const mod = await import('https://unpkg.com/@walletconnect/ethereum-provider@2.13.0/dist/index.es.js');
+      window.EthereumProvider = mod.EthereumProvider || mod.default;
+    }
 
-      // Show connected content, hide connect prompt
-      const prompt = document.getElementById('connect-prompt');
-      const content = document.getElementById('balance-content');
-      if (prompt) prompt.style.display = 'none';
-      if (content) content.style.display = 'block';
+    const EthProvider = window.EthereumProvider || globalThis.EthereumProvider;
 
-      // Update referral link
-      const refEl = document.querySelector('.ref-link');
-      if (refEl) refEl.textContent = 'nexvault.one/app?ref=' + short;
-
-      // Save for auto-reconnect
-      localStorage.setItem('nexvault_wallet', address);
-
-      // Check genesis badge
-      if (typeof checkGenesisBadge === 'function') {
-        try { await checkGenesisBadge(address, provider); } catch(e) {}
+    const wcProvider = await EthProvider.init({
+      projectId: projectId,
+      chains: [1],  // Ethereum mainnet (will switch to Nexus on mainnet)
+      showQrModal: true,
+      qrModalOptions: {
+        themeMode: 'dark',
+        themeVariables: {
+          '--wcm-z-index': '999999',
+          '--wcm-accent-color': '#c9a84c',
+          '--wcm-background-color': '#0a0c12',
+        }
       }
+    });
 
-      // Check if this is the founder/dev wallet — show dev dashboard
-      const DEV_WALLET = '0x44e06FB3517Ee815BBA5612F783712Ac4f498ba0';
-      if (address.toLowerCase() === DEV_WALLET.toLowerCase()) {
-        const devPanel = document.getElementById('dev-panel');
-        if (devPanel) devPanel.style.display = 'block';
-        showNotif('Founder wallet connected — Dev Dashboard active', 'ok');
-      } else {
-        showNotif('Wallet connected: ' + short, 'ok');
+    await wcProvider.enable();
+
+    // Create ethers provider from WalletConnect
+    const ethersProvider = new ethers.BrowserProvider(wcProvider);
+    const signer = await ethersProvider.getSigner();
+    const address = await signer.getAddress();
+
+    // Store WC provider for later use
+    window._activeProvider = wcProvider;
+    window._wcProvider = wcProvider;
+
+    // Handle disconnect
+    wcProvider.on('disconnect', () => { disconnectWallet(); });
+    wcProvider.on('accountsChanged', (accounts) => {
+      if (!accounts.length) disconnectWallet();
+      else window.location.reload();
+    });
+
+    await finalizeConnection(wcProvider, address);
+
+  } catch (err) {
+    btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
+    if (err.message && err.message.includes('User rejected')) {
+      showNotif('Connection cancelled', 'err');
+    } else {
+      console.error('WalletConnect error:', err);
+      showNotif('QR connection failed — try extension instead', 'err');
+    }
+  }
+}
+
+// ── Finalize connection (shared by extension + QR) ──
+async function finalizeConnection(provider, addressOverride) {
+  const btn = document.getElementById('wallet-btn');
+  try {
+    let address = addressOverride;
+    if (!address) {
+      const accounts = await provider.request({ method: 'eth_requestAccounts' });
+      if (!accounts || !accounts.length) {
+        btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
+        showNotif('No accounts returned', 'err');
+        return;
       }
+      address = accounts[0];
+    }
 
-      // Listen for account/chain changes
+    const short = address.slice(0,6) + '...' + address.slice(-4);
+
+    // Update wallet button
+    btn.innerHTML = '<div style="width:7px;height:7px;border-radius:50%;background:#4ade80"></div> <span>' + short + '</span>';
+    btn.style.borderColor = 'rgba(96,165,250,.3)';
+    btn.style.background = 'rgba(96,165,250,.07)';
+    btn.style.color = '#60a5fa';
+    btn.onclick = function() { disconnectWallet(); };
+
+    // Show connected content
+    const prompt = document.getElementById('connect-prompt');
+    const content = document.getElementById('balance-content');
+    if (prompt) prompt.style.display = 'none';
+    if (content) content.style.display = 'block';
+
+    // Referral link
+    const refEl = document.querySelector('.ref-link');
+    if (refEl) refEl.textContent = 'nexvault.one/app?ref=' + short;
+
+    // Save for auto-reconnect
+    localStorage.setItem('nexvault_wallet', address);
+
+    // Check genesis badge
+    if (typeof checkGenesisBadge === 'function') {
+      try { await checkGenesisBadge(address, provider); } catch(e) {}
+    }
+
+    // Dev wallet detection
+    const DEV_WALLET = '0x44e06FB3517Ee815BBA5612F783712Ac4f498ba0';
+    if (address.toLowerCase() === DEV_WALLET.toLowerCase()) {
+      const devPanel = document.getElementById('dev-panel');
+      if (devPanel) devPanel.style.display = 'block';
+      showNotif('Founder wallet connected — Dev Dashboard active', 'ok');
+    } else {
+      showNotif('Wallet connected: ' + short, 'ok');
+    }
+
+    // Account/chain listeners
+    try {
       provider.on('accountsChanged', (accts) => {
         if (!accts || accts.length === 0) disconnectWallet();
         else window.location.reload();
       });
       provider.on('chainChanged', () => window.location.reload());
-    }
+    } catch(e) {}
+
   } catch (err) {
     btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
-    if (err.code === 4001) showNotif('Connection cancelled', 'err');
-    else if (err.code === -32002) showNotif('MetaMask popup already open — check extension', 'err');
+    if (err.code === 4001 || (err.message && err.message.includes('rejected'))) showNotif('Connection cancelled', 'err');
     else showNotif('Connection failed — try again', 'err');
   }
 }
 
+// ── Main connectWallet — shows the wallet selection modal ──
+function connectWallet() {
+  showWalletModal();
+}
+
 function disconnectWallet() {
+  // Disconnect WalletConnect session if active
+  if (window._wcProvider) {
+    try { window._wcProvider.disconnect(); } catch(e) {}
+    window._wcProvider = null;
+  }
   window._activeProvider = null;
   localStorage.removeItem('nexvault_wallet');
   const btn = document.getElementById('wallet-btn');

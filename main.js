@@ -5,72 +5,93 @@ const path = require('path')
 const fs   = require('fs')
 const os   = require('os')
 
+// ── Enable Chrome extension support in Electron ──────────────────────────────
+// These flags MUST be set before app.ready
+app.commandLine.appendSwitch('enable-features', 'ExtensionsToolbarMenu')
+
 // ── Config ────────────────────────────────────────────────────────────────────
 const METAMASK_ID   = 'nkbihfbeogaeaoehlefnkodbefgpgknn'
-const SESSION_PART  = 'persist:nexvault'
+const APP_URL       = 'https://nexvault.one/app'
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let mainWindow = null
 let tray       = null
+let metamaskLoaded = false
 
 // ── Find MetaMask extension from Chrome / Edge / Brave ────────────────────────
 function findMetaMaskPath() {
   const home = os.homedir()
   const local = process.env.LOCALAPPDATA || ''
 
-  const candidates = process.platform === 'win32' ? [
-    path.join(local, 'Google', 'Chrome',               'User Data', 'Default', 'Extensions', METAMASK_ID),
-    path.join(local, 'Google', 'Chrome Beta',           'User Data', 'Default', 'Extensions', METAMASK_ID),
-    path.join(local, 'Microsoft', 'Edge',               'User Data', 'Default', 'Extensions', METAMASK_ID),
-    path.join(local, 'BraveSoftware', 'Brave-Browser',  'User Data', 'Default', 'Extensions', METAMASK_ID)
+  // Build candidate paths for all browsers on all platforms
+  const browsers = process.platform === 'win32' ? [
+    path.join(local, 'Google', 'Chrome',               'User Data'),
+    path.join(local, 'Google', 'Chrome Beta',           'User Data'),
+    path.join(local, 'Microsoft', 'Edge',               'User Data'),
+    path.join(local, 'BraveSoftware', 'Brave-Browser',  'User Data')
   ] : process.platform === 'darwin' ? [
-    path.join(home, 'Library', 'Application Support', 'Google', 'Chrome',              'Default', 'Extensions', METAMASK_ID),
-    path.join(home, 'Library', 'Application Support', 'Microsoft Edge',                 'Default', 'Extensions', METAMASK_ID),
-    path.join(home, 'Library', 'Application Support', 'BraveSoftware', 'Brave-Browser', 'Default', 'Extensions', METAMASK_ID)
+    path.join(home, 'Library', 'Application Support', 'Google', 'Chrome'),
+    path.join(home, 'Library', 'Application Support', 'Microsoft Edge'),
+    path.join(home, 'Library', 'Application Support', 'BraveSoftware', 'Brave-Browser')
   ] : [
-    path.join(home, '.config', 'google-chrome',   'Default', 'Extensions', METAMASK_ID),
-    path.join(home, '.config', 'microsoft-edge',  'Default', 'Extensions', METAMASK_ID),
-    path.join(home, '.config', 'BraveSoftware',   'Brave-Browser', 'Default', 'Extensions', METAMASK_ID)
+    path.join(home, '.config', 'google-chrome'),
+    path.join(home, '.config', 'microsoft-edge'),
+    path.join(home, '.config', 'BraveSoftware', 'Brave-Browser')
   ]
 
-  for (const base of candidates) {
-    if (!fs.existsSync(base)) continue
-    try {
-      const versions = fs.readdirSync(base)
-        .filter(v => { try { return fs.statSync(path.join(base, v)).isDirectory() } catch { return false } })
-        .sort()
-      if (versions.length > 0) {
-        const extPath = path.join(base, versions[versions.length - 1])
-        console.log('[NexVault] Found MetaMask at:', extPath)
-        return extPath
-      }
-    } catch (e) {
-      continue
+  // Check Default profile and Profile 1-5 for each browser
+  const profiles = ['Default', 'Profile 1', 'Profile 2', 'Profile 3', 'Profile 4', 'Profile 5']
+
+  for (const browserBase of browsers) {
+    for (const profile of profiles) {
+      const extBase = path.join(browserBase, profile, 'Extensions', METAMASK_ID)
+      if (!fs.existsSync(extBase)) continue
+      try {
+        const versions = fs.readdirSync(extBase)
+          .filter(v => { try { return fs.statSync(path.join(extBase, v)).isDirectory() } catch { return false } })
+          .sort()
+        if (versions.length > 0) {
+          const extPath = path.join(extBase, versions[versions.length - 1])
+          console.log('[NexVault] Found MetaMask at:', extPath)
+          return extPath
+        }
+      } catch (e) { continue }
     }
   }
   return null
 }
 
-// ── Load MetaMask into persistent session ─────────────────────────────────────
+// ── Load MetaMask into DEFAULT session ────────────────────────────────────────
+// Using defaultSession (not a partition) is critical for extension injection
 async function loadMetaMask() {
   const mmPath = findMetaMaskPath()
   if (!mmPath) {
-    console.warn('[NexVault] MetaMask not found. Users need MetaMask installed in Chrome, Edge, or Brave.')
+    console.warn('[NexVault] MetaMask not found in any browser.')
     return false
   }
   try {
-    const ses = session.fromPartition(SESSION_PART)
-    await ses.loadExtension(mmPath, { allowFileAccess: true })
-    console.log('[NexVault] MetaMask loaded successfully')
+    // Load into the DEFAULT session — extensions inject window.ethereum
+    // only when loaded into the session the BrowserWindow uses
+    await session.defaultSession.loadExtension(mmPath, { allowFileAccess: true })
+    console.log('[NexVault] MetaMask loaded into default session')
     return true
   } catch (err) {
     console.warn('[NexVault] MetaMask load error:', err.message)
-    return false
+    // Try with explicit partition as fallback
+    try {
+      const ses = session.fromPartition('persist:nexvault')
+      await ses.loadExtension(mmPath, { allowFileAccess: true })
+      console.log('[NexVault] MetaMask loaded into persist:nexvault session')
+      return true
+    } catch (err2) {
+      console.warn('[NexVault] MetaMask fallback load also failed:', err2.message)
+      return false
+    }
   }
 }
 
 // ── Create main window ────────────────────────────────────────────────────────
-function createWindow(metamaskLoaded) {
+function createWindow() {
   mainWindow = new BrowserWindow({
     width:     1320,
     height:    880,
@@ -84,57 +105,82 @@ function createWindow(metamaskLoaded) {
       preload:          path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration:  false,
-      partition:        SESSION_PART,
-      // Required for MetaMask extension to inject window.ethereum
+      // NO partition — use default session so MetaMask extension injects properly
       webSecurity:      true,
       sandbox:          false
     }
   })
 
-  // Hide the menu bar entirely
   mainWindow.setMenuBarVisibility(false)
 
-  // Load the LIVE dashboard from nexvault.one — same as browser
-  // This ensures MetaMask injection works identically to browser
-  mainWindow.loadURL('https://nexvault.one/app')
+  // Load the live dashboard
+  mainWindow.loadURL(APP_URL)
 
-  // Open external links (docs, explorers, whitepaper) in system browser
+  // After page loads, check MetaMask and inject fallback if needed
+  mainWindow.webContents.on('did-finish-load', () => {
+    // Give MetaMask 2 seconds to inject window.ethereum
+    setTimeout(() => {
+      mainWindow.webContents.executeJavaScript(`
+        (function() {
+          window.__nexvaultDesktop = {
+            version: '${require('./package.json').version}',
+            platform: '${process.platform}',
+            metamaskLoaded: ${metamaskLoaded}
+          };
+
+          // Check if MetaMask injected
+          if (window.ethereum) {
+            console.log('[NexVault Desktop] MetaMask detected via window.ethereum');
+          } else {
+            console.log('[NexVault Desktop] MetaMask NOT detected — adding browser fallback');
+
+            // Override connectWallet to open system browser
+            if (typeof window.connectWallet === 'function') {
+              const originalConnect = window.connectWallet;
+              window.connectWallet = async function() {
+                // First try the normal way
+                const provider = typeof waitForMetaMask === 'function' ? await waitForMetaMask() : null;
+                if (provider) {
+                  return originalConnect();
+                }
+                // MetaMask not found — offer to open in browser
+                const btn = document.getElementById('wallet-btn');
+                if (btn) {
+                  btn.innerHTML = '<span style="font-size:13px">\\u25C8</span> <span>OPEN IN BROWSER</span>';
+                  btn.onclick = function() {
+                    // Send message to Electron to open in system browser
+                    window.open('${APP_URL}', '_blank');
+                  };
+                }
+                // Show notification
+                if (typeof showNotif === 'function') {
+                  showNotif('Opening in browser where MetaMask is installed...', 'ok');
+                }
+              };
+            }
+          }
+        })();
+      `).catch(() => {})
+    }, 2000)
+  })
+
+  // Allow MetaMask extension popups and nexvault.one
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // Allow MetaMask popups (extension pages)
     if (url.startsWith('chrome-extension://')) return { action: 'allow' }
-    // Allow nexvault.one/app navigation
-    if (url.startsWith('https://nexvault.one/app')) return { action: 'allow' }
+    if (url.startsWith('https://nexvault.one')) return { action: 'allow' }
     shell.openExternal(url)
     return { action: 'deny' }
   })
 
-  // Intercept navigation — keep user on the dashboard only
+  // Navigation control — stay on dashboard
   mainWindow.webContents.on('will-navigate', (e, url) => {
-    // Allow nexvault.one/app (the dashboard)
     if (url.startsWith('https://nexvault.one/app')) return
-    // Allow chrome-extension:// (MetaMask popups)
     if (url.startsWith('chrome-extension://')) return
-    // Everything else opens in system browser
     e.preventDefault()
     shell.openExternal(url)
   })
 
-  // Inject MetaMask status into the page after load
-  mainWindow.webContents.on('did-finish-load', () => {
-    mainWindow.webContents.executeJavaScript(`
-      window.__nexvaultDesktop = {
-        version: '${require('./package.json').version}',
-        platform: '${process.platform}',
-        metamaskLoaded: ${metamaskLoaded}
-      };
-      // If MetaMask didn't inject, show a helpful message
-      if (!window.ethereum && !${metamaskLoaded}) {
-        console.log('[NexVault Desktop] MetaMask not available. Install MetaMask in Chrome, Edge, or Brave to connect your wallet.');
-      }
-    `).catch(() => {})
-  })
-
-  // Minimize to tray instead of closing
+  // Minimize to tray
   mainWindow.on('close', e => {
     if (!app.isQuitting) {
       e.preventDefault()
@@ -154,15 +200,11 @@ function createTray() {
   tray.setToolTip('NexVault — USDX Savings Protocol')
 
   tray.setContextMenu(Menu.buildFromTemplate([
-    {
-      label: 'Open NexVault',
-      click: () => { mainWindow.show(); mainWindow.focus() }
-    },
+    { label: 'Open NexVault', click: () => { mainWindow.show(); mainWindow.focus() } },
     { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => { app.isQuitting = true; app.quit() }
-    }
+    { label: 'Open in Browser', click: () => { shell.openExternal(APP_URL) } },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { app.isQuitting = true; app.quit() } }
   ]))
 
   tray.on('click',        () => { mainWindow.show(); mainWindow.focus() })
@@ -171,9 +213,15 @@ function createTray() {
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
-  const metamaskLoaded = await loadMetaMask()
-  createWindow(metamaskLoaded)
+  metamaskLoaded = await loadMetaMask()
+  createWindow()
   createTray()
+
+  // If MetaMask failed to load, log instructions
+  if (!metamaskLoaded) {
+    console.log('[NexVault] TIP: Install MetaMask in Chrome/Edge/Brave, then restart NexVault.')
+    console.log('[NexVault] Or use the "Open in Browser" option from the system tray.')
+  }
 })
 
 app.on('window-all-closed', () => {
@@ -181,7 +229,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow(false)
+  if (BrowserWindow.getAllWindows().length === 0) createWindow()
   else mainWindow.show()
 })
 

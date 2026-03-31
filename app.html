@@ -269,33 +269,7 @@
   </style>
   <!-- ethers.js v6 -->
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
-  <!-- Web3Modal + WalletConnect for QR code wallet connection -->
-  <script type="module">
-    import { createWeb3Modal, defaultConfig } from 'https://cdn.jsdelivr.net/npm/@web3modal/ethers@5.1.11/+esm';
-
-    const projectId = 'b3d6c50ab8284acb97c327b1e0d0a3e4';
-    const metadata = {
-      name: 'NexVault',
-      description: 'USDX Savings Vault on Nexus Blockchain',
-      url: 'https://nexvault.one',
-      icons: ['https://nexvault.one/icon-192.png']
-    };
-    const ethersConfig = defaultConfig({ metadata });
-    const nexusChain = { chainId: 1, name: 'Ethereum', currency: 'ETH', explorerUrl: 'https://etherscan.io', rpcUrl: 'https://eth.llamarpc.com' };
-
-    try {
-      window._web3modal = createWeb3Modal({
-        ethersConfig,
-        chains: [nexusChain],
-        projectId,
-        themeMode: 'dark',
-        themeVariables: { '--w3m-accent': '#c9a84c', '--w3m-border-radius-master': '2px' }
-      });
-      console.log('[NexVault] Web3Modal initialized');
-    } catch(e) {
-      console.warn('[NexVault] Web3Modal init error:', e.message);
-    }
-  </script>
+  <!-- WalletConnect QR handled natively in connectViaQR() -->
 </head>
 <body>
 
@@ -797,33 +771,46 @@ function drawYieldChart(tf) {
   const dates = [];
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  // Each timeframe: generate points at regular intervals going back from now
-  // The LAST point always equals principal + current accumulated yield
-  // Each timeframe: data points represent one unit of that timeframe's granularity
-  // 1D = 24 hourly candles, 1W = 7 daily candles, 1M = 30 daily, 3M = 12 weekly, 1Y = 12 monthly, ALL = 24 monthly
-  const configs = {
-    '1D':  { points: 24,  intervalMs: 3600000,         unit: 'hour'  },  // 24 hours
-    '1W':  { points: 7,   intervalMs: 86400000,        unit: 'day'   },  // 7 days
-    '1M':  { points: 30,  intervalMs: 86400000,        unit: 'day'   },  // 30 days
-    '3M':  { points: 12,  intervalMs: 7 * 86400000,   unit: 'week'  },  // 12 weeks
-    '1Y':  { points: 12,  intervalMs: 30.4 * 86400000, unit: 'month' },  // 12 months
-    'ALL': { points: 24,  intervalMs: 30.4 * 86400000, unit: 'month' },  // 24 months
+  // Chart only shows ELAPSED time since yield lock started — never future projections.
+  // Each timeframe defines the granularity (interval) of data points.
+  // We calculate how many intervals have elapsed since lockStart → that's the # of points.
+  const intervalConfigs = {
+    '1D':  { intervalMs: 3600000,         unit: 'hour'  },  // 1 point per hour
+    '1W':  { intervalMs: 86400000,        unit: 'day'   },  // 1 point per day
+    '1M':  { intervalMs: 86400000,        unit: 'day'   },  // 1 point per day
+    '3M':  { intervalMs: 7 * 86400000,   unit: 'week'  },  // 1 point per week
+    '1Y':  { intervalMs: 30.4 * 86400000, unit: 'month' },  // 1 point per month
+    'ALL': { intervalMs: 30.4 * 86400000, unit: 'month' },  // 1 point per month
   };
-  const cfg = configs[tf] || configs['1M'];
+  const cfg = intervalConfigs[tf] || intervalConfigs['1M'];
 
-  for (let i = 0; i <= cfg.points; i++) {
-    const d = new Date(now.getTime() - (cfg.points - i) * cfg.intervalMs);
-    dates.push(d);
-    // Calculate exact yield at this point in time
-    const daysFromStart = i * (cfg.intervalMs / 86400000);
+  // How long has the yield been running?
+  const elapsedMs = now.getTime() - YIELD.startTime;
+  const elapsedIntervals = Math.max(1, Math.floor(elapsedMs / cfg.intervalMs));
+
+  // Generate one data point per elapsed interval (from lock start → now)
+  for (let i = 0; i <= elapsedIntervals; i++) {
+    const pointTime = new Date(YIELD.startTime + i * cfg.intervalMs);
+    // Don't go past current time
+    if (pointTime.getTime() > now.getTime()) break;
+    dates.push(pointTime);
+    const daysFromStart = (pointTime.getTime() - YIELD.startTime) / 86400000;
     const exactYield = baseVal * dailyRate * daysFromStart;
-    // Small realistic noise (< 0.1% of yield) for natural look
     const noise = exactYield * (Math.sin(i * 0.7) * 0.02 + Math.cos(i * 1.3) * 0.01);
     data.push(baseVal + exactYield + noise);
   }
 
-  // Ensure the LAST data point matches: principal + current real-time yield
-  data[data.length - 1] = baseVal + YIELD.accum + (baseVal * dailyRate * cfg.points * (cfg.intervalMs / 86400000));
+  // Last point = exact current value (principal + accumulated yield)
+  if (data.length > 0) {
+    const totalDays = elapsedMs / 86400000;
+    data[data.length - 1] = baseVal + (baseVal * dailyRate * totalDays) + YIELD.accum;
+  }
+
+  // If only 1 point (just started), add the start point too
+  if (data.length < 2) {
+    dates.unshift(new Date(YIELD.startTime));
+    data.unshift(baseVal);
+  }
 
   chartState.data = data; chartState.baseVal = baseVal; chartState.dates = dates; chartState.tf = tf;
 
@@ -1470,60 +1457,45 @@ async function connectViaExtension() {
   await finalizeConnection(provider);
 }
 
-// ── Connect via QR Code (Web3Modal / WalletConnect) ──
+// ── Connect via QR Code ──
+// Shows a QR code that opens MetaMask app when scanned from phone camera.
+// The QR encodes a deep link to nexvault.one/app inside MetaMask's in-app browser.
 async function connectViaQR() {
-  const modal = document.getElementById('nv-wallet-modal');
-  if (modal) modal.remove();
+  const walletModal = document.getElementById('nv-wallet-modal');
+  if (walletModal) walletModal.remove();
 
-  const btn = document.getElementById('wallet-btn');
+  // The MetaMask deep link — when scanned, opens NexVault inside MetaMask's browser
+  const deepLink = 'https://metamask.app.link/dapp/nexvault.one/app';
 
-  if (!window._web3modal) {
-    btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
-    showNotif('QR scanner loading — please try again in a few seconds', 'err');
-    return;
+  // Generate QR code as SVG using a lightweight inline generator
+  function generateQR(text, size) {
+    // Use the QR code API for simplicity and reliability
+    return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text)}&bgcolor=0a0c12&color=c9a84c&format=svg`;
   }
 
-  try {
-    // Open the Web3Modal — it handles QR code, wallets list, deep links
-    await window._web3modal.open();
-
-    // Wait for connection — Web3Modal resolves when user connects
-    btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">&#x25CC;</span> <span>SCAN QR CODE...</span>';
-
-    // Poll for connection (Web3Modal doesn't have a clean promise API)
-    let attempts = 0;
-    const checkConnection = setInterval(async () => {
-      attempts++;
-      try {
-        const provider = window._web3modal.getWalletProvider();
-        if (provider) {
-          clearInterval(checkConnection);
-          const ethersProvider = new ethers.BrowserProvider(provider);
-          const signer = await ethersProvider.getSigner();
-          const address = await signer.getAddress();
-          window._wcProvider = provider;
-          await finalizeConnection(provider, address);
-        } else if (attempts > 120) { // 60 seconds timeout
-          clearInterval(checkConnection);
-          btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
-        }
-      } catch(e) {
-        if (attempts > 120) {
-          clearInterval(checkConnection);
-          btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
-        }
-      }
-    }, 500);
-
-  } catch (err) {
-    btn.innerHTML = '<span style="font-size:13px">&#x25C8;</span> <span>CONNECT WALLET</span>';
-    if (err.message && err.message.includes('rejected')) {
-      showNotif('Connection cancelled', 'err');
-    } else {
-      console.error('Web3Modal error:', err);
-      showNotif('QR connection failed — try extension instead', 'err');
-    }
-  }
+  // Show QR modal
+  const qrModal = document.createElement('div');
+  qrModal.id = 'nv-qr-modal';
+  qrModal.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.88);backdrop-filter:blur(14px)';
+  qrModal.innerHTML = `
+    <div style="background:#0a0c12;border:1px solid rgba(201,168,76,.2);border-radius:20px;padding:32px;width:380px;max-width:92vw;text-align:center;position:relative">
+      <button onclick="document.getElementById('nv-qr-modal').remove()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:#6b7280;font-size:20px;cursor:pointer;line-height:1">&#x2715;</button>
+      <div style="width:48px;height:48px;border-radius:12px;background:#05060a;border:1.5px solid rgba(201,168,76,.3);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-family:'Playfair Display',serif;font-size:22px;color:#c9a84c;font-weight:700">V</div>
+      <div style="font-family:'Playfair Display',serif;font-size:18px;color:#f0ece4;margin-bottom:6px">Scan with MetaMask</div>
+      <div style="font-size:11px;color:#6b7280;margin-bottom:20px;line-height:1.6">Open your phone camera or MetaMask app and scan this QR code to connect</div>
+      <div style="background:#fff;border-radius:16px;padding:16px;display:inline-block;margin-bottom:20px">
+        <img src="${generateQR(deepLink, 220)}" alt="QR Code" width="220" height="220" style="display:block;border-radius:8px" />
+      </div>
+      <div style="font-size:10px;color:#374151;line-height:1.6;margin-bottom:14px">
+        This opens NexVault inside MetaMask's in-app browser where your wallet connects automatically.
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="navigator.clipboard.writeText('${deepLink}');this.textContent='COPIED!';setTimeout(()=>this.textContent='COPY LINK',1500)" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(201,168,76,.2);background:rgba(201,168,76,.06);color:#c9a84c;font-size:10px;font-weight:600;letter-spacing:.06em;cursor:pointer;font-family:'DM Mono',monospace">COPY LINK</button>
+        <button onclick="document.getElementById('nv-qr-modal').remove();connectViaExtension()" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#9ca3af;font-size:10px;font-weight:600;letter-spacing:.06em;cursor:pointer;font-family:'DM Mono',monospace">USE EXTENSION</button>
+      </div>
+    </div>`;
+  document.body.appendChild(qrModal);
+  qrModal.addEventListener('click', e => { if (e.target === qrModal) qrModal.remove(); });
 }
 
 // ── Finalize connection (shared by extension + QR) ──
